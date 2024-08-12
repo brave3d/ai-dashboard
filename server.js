@@ -10,7 +10,6 @@ app.use(cors({
   origin: 'https://brave3d.github.io'
 }));
 
-// Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Configure the client with the API key
