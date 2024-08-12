@@ -8,8 +8,10 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "server.js"
+      "src": "/generate-stream",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://brave3d.github.io"
+      }
     }
   ],
   "github": {
