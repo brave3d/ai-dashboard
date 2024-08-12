@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         logsContainer.innerHTML = '';
         imagePlaceholder.innerHTML = '';
 
-        const eventSource = new EventSource(`/generate-stream?${queryString}`);
+        const eventSource = new EventSource(`https://test-flux-9xg34uukm-brave-mans-projects.vercel.app/generate-stream?${queryString}`);
 
         eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
