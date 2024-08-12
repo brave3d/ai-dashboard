@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         const eventSource = new EventSource(`https://test-flux-9xg34uukm-brave-mans-projects.vercel.app/generate-stream?${queryString}`);
 
+        
         eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
             if (data.type === 'log') {
