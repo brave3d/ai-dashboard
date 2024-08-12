@@ -2,9 +2,13 @@ const express = require('express');
 const fal = require("@fal-ai/serverless-client");
 const path = require('path');
 require('dotenv').config();
+const cors = require('cors');
 
 const app = express();
 app.use(express.json());
+app.use(cors({
+  origin: 'https://brave3d.github.io'
+}));
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
