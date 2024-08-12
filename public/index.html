@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Generator</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/idb@6.1.0/build/iife/index-min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="input-section">
+            <h2>Input</h2>
+            <form id="generationForm">
+                <label for="prompt">Prompt*</label>
+                <textarea id="prompt" name="prompt" rows="4" required></textarea>
+
+                <div class="additional-settings">
+                    <h3>Additional Settings</h3>
+                    <label for="imageSize">Image Size</label>
+                    <select id="imageSize" name="imageSize">
+                        <option value="square_hd">Square HD</option>
+                        <option value="square">Square</option>
+                        <option value="portrait_4_3">Portrait 4:3</option>
+                        <option value="portrait_16_9">Portrait 16:9</option>
+                        <option value="landscape_4_3">Landscape 4:3</option>
+                        <option value="landscape_16_9">Landscape 16:9</option>
+                    </select>
+
+                    <!-- <label for="numSteps">Num Inference Steps</label>
+                    <input type="range" id="numSteps" name="numSteps" min="1" max="50" value="28"> -->
+                   
+                    <div class="form-group">
+                        <label for="numSteps">Num Inference Steps</label>
+                        <div class="slider-container">
+                          <input type="range" id="numStepsSlider" name="numSteps" min="1" max="50" value="28" class="slider">
+                          <input type="number" id="numStepsInput" name="numSteps" min="1" max="50" value="28" class="number-input">
+                        </div>
+                      </div>
+                    <label for="seed">Seed</label>
+                    <input type="text" id="seed" name="seed" value="random">
+
+                    <div class="form-group">
+                        <label for="guidanceScale">Guidance Scale (CFG)</label>
+                        <div class="slider-container">
+                            <input type="range" id="guidanceScaleSlider" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="slider">
+                            <input type="number" id="guidanceScaleInput" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="number-input">
+                        </div>
+                    </div>
+
+                    <label for="numImages">Num Images</label>
+                    <input type="number" id="numImages" name="numImages" value="1" min="1" max="4">
+
+                    <label for="enableSafetyChecker">Enable Safety Checker</label>
+                    <input type="checkbox" id="enableSafetyChecker" name="enableSafetyChecker">
+                </div>
+
+                <button type="submit">Generate</button>
+            </form>
+        </div>
+        <div class="result-section">
+            <h2>Result</h2>
+            <div class="image-display">
+                <div id="imagePlaceholder">
+                    <!-- Placeholder for multiple images -->
+                </div>
+                <button id="prevBtn" class="slider-button" style="display: none;">❮</button>
+                <button id="nextBtn" class="slider-button" style="display: none;">❯</button>
+            </div>
+            <div class="logs-section" style="display: flex; flex-direction: column; justify-content: flex-end; height: 100%;">
+                <div id="logs"></div>
+            </div>
+        </div>
+    </div>
+    <div id="history" class="history-section"></div>
+
+    <!-- Bootstrap Modal -->
+    <div class="modal fade" id="imageModal" tabindex="-1" role="dialog" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+            
+                <div class="modal-body">
+                    <img id="modalImage" src="" alt="Generated Image" style="width: 100%;">
+                    <div class="modal-details">
+                        <p id="modalPrompt"></p>
+                        <p id="modalSeed"></p>
+                        <p id="modalNSFW"></p>
+                        <p id="modalTimings"></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="downloadBtn" class="btn btn-primary">Download</button>
+                    <button id="reusePromptBtn" class="btn btn-secondary">Reuse Prompt</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
