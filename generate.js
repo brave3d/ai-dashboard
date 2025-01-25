@@ -1,48 +1,78 @@
-// Load environment variables from .env file
-require('dotenv').config();
+document.addEventListener('DOMContentLoaded', () => {
+  const modelSelect = document.getElementById('model-select');
+  const fetchHistoryButton = document.getElementById('fetch-history');
+  const historyContainer = document.getElementById('history-container');
+  const prevPageButton = document.getElementById('prev-page');
+  const nextPageButton = document.getElementById('next-page');
+  const modal = document.getElementById('modal');
+  const modalImage = document.getElementById('modal-image');
+  const closeModal = document.getElementsByClassName('close')[0];
 
-const fal = require("@fal-ai/serverless-client");
+  let currentPage = 1;
+  let totalPages = 1;
 
-// Configure the client with the API key
-fal.config({
-  credentials: process.env.FAL_KEY
+  const fetchHistory = async () => {
+      const selectedModel = modelSelect.value;
+      const url = `/api/history?model=${selectedModel}&page=${currentPage}`;
+
+      try {
+          const response = await fetch(url);
+          const data = await response.json();
+          displayHistory(data.items);
+          totalPages = data.pages;
+          updatePaginationButtons();
+      } catch (error) {
+          console.error('Error fetching history:', error);
+      }
+  };
+
+  const displayHistory = (items) => {
+      historyContainer.innerHTML = '';
+      items.forEach(item => {
+          const historyItem = document.createElement('div');
+          historyItem.className = 'history-item';
+          historyItem.innerHTML = `
+              <p>Request ID: ${item.request_id}</p>
+              <p>Started At: ${item.started_at}</p>
+              <p>Ended At: ${item.ended_at}</p>
+              <img src="${item.json_output.images[0].url}" alt="Generated">
+          `;
+          historyItem.addEventListener('click', () => openModal(item.json_output.images[0].url));
+          historyContainer.appendChild(historyItem);
+      });
+  };
+
+  const openModal = (imageUrl) => {
+      modal.style.display = 'block';
+      modalImage.src = imageUrl;
+  };
+
+  const closeModalHandler = () => {
+      modal.style.display = 'none';
+  };
+
+  const updatePaginationButtons = () => {
+      prevPageButton.disabled = currentPage <= 1;
+      nextPageButton.disabled = currentPage >= totalPages;
+  };
+
+  fetchHistoryButton.addEventListener('click', fetchHistory);
+  prevPageButton.addEventListener('click', () => {
+      if (currentPage > 1) {
+          currentPage--;
+          fetchHistory();
+      }
+  });
+  nextPageButton.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+          currentPage++;
+          fetchHistory();
+      }
+  });
+  closeModal.addEventListener('click', closeModalHandler);
+  window.addEventListener('click', (event) => {
+      if (event.target === modal) {
+          closeModalHandler();
+      }
+  });
 });
-
-// Get parameters from command line arguments
-const [prompt, imageSize, numSteps, seed, guidanceScale, numImages, enableSafetyChecker] = process.argv.slice(2);
-
-(async () => {
-  try {
-    const result = await fal.subscribe("fal-ai/flux-realism/", {
-      input: {
-        prompt,
-        image_size: imageSize || 'landscape_4_3', // Default value if not provided
-        num_inference_steps: parseInt(numSteps) || 28, // Default value if not provided
-        seed: seed ? parseInt(seed) : undefined, // Only include seed if provided
-        guidance_scale: parseFloat(guidanceScale) || 3.5, // Default value if not provided
-        num_images: parseInt(numImages) || 1, // Default value if not provided
-        enable_safety_checker: enableSafetyChecker === 'true' // Enable safety checker based on the parameter
-      },
-      logs: true,
-      onQueueUpdate: (update) => {
-        if (update.status === "IN_PROGRESS") {
-          update.logs.map((log) => log.message).forEach(console.log);
-        }
-      },
-    });
-
-    // Ensure the result is a valid JSON object
-    const output = {
-      images: result.images,
-      prompt: result.prompt,
-      seed: result.seed,
-      has_nsfw_concepts: result.has_nsfw_concepts,
-      timings: result.timings
-    };
-
-    process.stdout.write(JSON.stringify(output));
-  } catch (error) {
-    process.stderr.write(JSON.stringify({ error: error.message }));
-    process.exit(1);
-  }
-})();

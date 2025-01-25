@@ -3,102 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Generator 1</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <link rel="stylesheet" href="styles.css">
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <title>Image Generator</title>
+    <link href="tailwind.css" rel="stylesheet">
     <script src="https://unpkg.com/idb@6.1.0/build/iife/index-min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@1.14.0/dist/full.css" rel="stylesheet">
+    <link href="dist/output.css" rel="stylesheet">
 </head>
-<body>
-    <div class="container">
-        <div class="input-section">
-            <h2>Input</h2>
-            <form id="generationForm">
-                <label for="prompt">Prompt*</label>
-                <textarea id="prompt" name="prompt" rows="4" required></textarea>
+<body class="bg-base-200">
+    <div class="container mx-auto p-4">
+           <!-- Add link to history page -->
+    <a href="history.html">View History</a>
+        <div class="grid grid-cols-2 gap-4">
+            <div class="input-section">
+                <h2 class="text-2xl font-bold mb-2">Input</h2>
+                <form id="generationForm">
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Select Model</span>
+                        </label>
+                        <select id="modelSelect" name="model" class="select select-bordered w-full">
+                            <option value="">Select a model</option>
+                        </select>
+                        <div id="thumbnails" class="mt-2"></div>
+                    </div>
 
-                <div class="additional-settings">
-                    <h3>Additional Settings</h3>
-                    <label for="imageSize">Image Size</label>
-                    <select id="imageSize" name="imageSize">
-                        <option value="square_hd">Square HD</option>
-                        <option value="square">Square</option>
-                        <option value="portrait_4_3">Portrait 4:3</option>
-                        <option value="portrait_16_9">Portrait 16:9</option>
-                        <option value="landscape_4_3">Landscape 4:3</option>
-                        <option value="landscape_16_9">Landscape 16:9</option>
-                    </select>
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Prompt*</span>
+                        </label>
+                        <textarea id="prompt" name="prompt" rows="4" required class="textarea textarea-bordered w-full"></textarea>
+                    </div>
 
-                    <!-- <label for="numSteps">Num Inference Steps</label>
-                    <input type="range" id="numSteps" name="numSteps" min="1" max="50" value="28"> -->
-                   
-                    <div class="form-group">
-                        <label for="numSteps">Num Inference Steps</label>
-                        <div class="slider-container">
-                          <input type="range" id="numStepsSlider" name="numSteps" min="1" max="50" value="28" class="slider">
-                          <input type="number" id="numStepsInput" name="numSteps" min="1" max="50" value="28" class="number-input">
+                    <div class="additional-settings">
+                        <h3 class="text-lg font-bold mb-2">Additional Settings</h3>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">Image Size</span>
+                            </label>
+                            <select id="imageSize" name="imageSize" class="select select-bordered w-full">
+                                <option value="square_hd">Square HD</option>
+                                <option value="square">Square</option>
+                                <option value="portrait_4_3">Portrait 4:3</option>
+                                <option value="portrait_16_9">Portrait 16:9</option>
+                                <option value="landscape_4_3">Landscape 4:3</option>
+                                <option value="landscape_16_9">Landscape 16:9</option>
+                            </select>
                         </div>
-                      </div>
-                    <label for="seed">Seed</label>
-                    <input type="text" id="seed" name="seed" value="random">
 
-                    <div class="form-group">
-                        <label for="guidanceScale">Guidance Scale (CFG)</label>
-                        <div class="slider-container">
-                            <input type="range" id="guidanceScaleSlider" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="slider">
-                            <input type="number" id="guidanceScaleInput" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="number-input">
+                        <div class="form-group mb-4">
+                            <label class="label">
+                                <span class="label-text">Num Inference Steps</span>
+                            </label>
+                            <div class="slider-container">
+                                <input type="range" id="numStepsSlider" name="numSteps" min="1" max="50" value="28" class="slider w-full">
+                                <input type="number" id="numStepsInput" name="numSteps" min="1" max="50" value="28" class="number-input input input-bordered w-sm max-w-xs">
+                            </div>
+                        </div>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">Seed</span>
+                            </label>
+                            <input type="text" id="seed" name="seed" value="random" class="input input-bordered w-full">
+                        </div>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">LoRA URL</span>
+                            </label>
+                            <input type="text" id="loraUrl" name="loraUrl" class="input input-bordered w-full">
+                        </div>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">LoRA Scale</span>
+                            </label>
+                            <input type="number" id="loraScale" name="loraScale" min="0" step="0.1" value="1" class="input input-bordered w-full">
+                        </div>
+                        <div class="form-group mb-4">
+                            <label class="label">
+                                <span class="label-text">Guidance Scale (CFG)</span>
+                            </label>
+                            <div class="slider-container">
+                                <input type="range" id="guidanceScaleSlider" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="slider w-full">
+                                <input type="number" id="guidanceScaleInput" name="guidanceScale" min="1" max="10" value="3.5" step="0.1" class="number-input input input-bordered w-sm max-w-xs">
+                            </div>
+                        </div>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">Num Images</span>
+                            </label>
+                            <input type="number" id="numImages" name="numImages" value="1" min="1" max="4" class="input input-bordered w-full">
+                        </div>
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">Enable Safety Checker</span>
+                            </label>
+                            <input type="checkbox" id="enableSafetyChecker" name="enableSafetyChecker" class="checkbox">
                         </div>
                     </div>
 
-                    <label for="numImages">Num Images</label>
-                    <input type="number" id="numImages" name="numImages" value="1" min="1" max="4">
-
-                    <label for="enableSafetyChecker">Enable Safety Checker</label>
-                    <input type="checkbox" id="enableSafetyChecker" name="enableSafetyChecker">
-                </div>
-
-                <button type="submit">Generate</button>
-            </form>
-        </div>
-        <div class="result-section">
-            <h2>Result</h2>
-            <div class="image-display">
-                <div id="imagePlaceholder">
-                    <!-- Placeholder for multiple images -->
-                </div>
-                <button id="prevBtn" class="slider-button" style="display: none;">❮</button>
-                <button id="nextBtn" class="slider-button" style="display: none;">❯</button>
+                    <button id="generateBtn" type="submit" class="btn btn-primary">
+                        Generate
+                        <span id="loadingSpinner" class="loading loading-spinner" style="display: none;"></span>
+                    </button>
+                </form>
             </div>
-            <div class="logs-section" style="display: flex; flex-direction: column; justify-content: flex-end; height: 100%;">
-                <div id="logs"></div>
-            </div>
-        </div>
-    </div>
-    <div id="history" class="history-section"></div>
-
-    <!-- Bootstrap Modal -->
-    <div class="modal fade" id="imageModal" tabindex="-1" role="dialog" aria-labelledby="imageModalLabel" aria-hidden="true">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-            
-                <div class="modal-body">
-                    <img id="modalImage" src="" alt="Generated Image" style="width: 100%;">
-                    <div class="modal-details">
-                        <p id="modalPrompt"></p>
-                        <p id="modalSeed"></p>
-                        <p id="modalNSFW"></p>
-                        <p id="modalTimings"></p>
+            <div class="result-section">
+                <h2 class="text-2xl font-bold mb-2">Result</h2>
+                <div class="image-display mb-4">
+                    <div id="imagePlaceholder" class="imagePlaceholder grid grid-cols-1 gap-4">
+                        <!-- Placeholder for multiple images -->
                     </div>
+                    <button id="prevBtn" class="btn btn-secondary" style="display: none;">❮</button>
+                    <button id="nextBtn" class="btn btn-secondary" style="display: none;">❯</button>
                 </div>
-                <div class="modal-footer">
-                    <button id="downloadBtn" class="btn btn-primary">Download</button>
-                    <button id="reusePromptBtn" class="btn btn-secondary">Reuse Prompt</button>
+                <div class="logs-section flex flex-col justify-end h-64 overflow-y-auto">
+                    <div id="logs" class="p-2 bg-base-100 rounded-box"></div>
                 </div>
             </div>
         </div>
+        <div id="history" class="history-section mt-4 grid grid-cols-4 gap-4">
+            <!-- History thumbnails will be appended here -->
+        </div>
     </div>
+
+    <!-- DaisyUI Modal -->
+    <div class="modal" id="imageModal">
+        <div class="modal-box w-10/12 max-w-4xl p-0" style="padding: 0px !important;">
+            <img id="modalImage" src="" alt="Generated Image" class="w-full">
+            <div class="modal-details">
+                <p id="modalPrompt"></p>
+                <p id="modalSeed"></p>
+                <p id="modalNSFW"></p>
+                <p id="modalTimings"></p>
+            </div>
+            <div class="modal-action">
+                <button id="downloadBtn" class="btn btn-primary">Download</button>
+                <button id="reusePromptBtn" class="btn btn-secondary">Reuse Prompt</button>
+                <button id="closeModalBtn" class="btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+ 
 
     <script src="script.js"></script>
 </body>

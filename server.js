@@ -3,14 +3,22 @@ const fal = require("@fal-ai/serverless-client");
 const path = require('path');
 require('dotenv').config();
 const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
 app.use(cors({
   origin: 'https://brave3d.github.io'
 }));
+const BEARER_TOKEN = process.env.BEARER_TOKEN;
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from the root directory
+app.use(express.static(__dirname));
+
+// Serve the index.html file for the root URL
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Configure the client with the API key
 fal.config({
@@ -25,10 +33,12 @@ app.get('/generate-stream', async (req, res) => {
         'Access-Control-Allow-Origin': 'https://brave3d.github.io'
     });
 
-    const { prompt, imageSize, numSteps, seed, guidanceScale, numImages, enableSafetyChecker } = req.query;
+    const { prompt, imageSize, numSteps, seed, guidanceScale, numImages, enableSafetyChecker, model, loraUrl, loraScale } = req.query;
 
     try {
-        const result = await fal.subscribe("fal-ai/flux", {
+        const loras = loraUrl ? [{ path: loraUrl, scale: parseFloat(loraScale) || 1 }] : [];
+
+        const result = await fal.subscribe(model, {
             input: {
                 prompt,
                 image_size: imageSize || 'landscape_4_3',
@@ -36,7 +46,8 @@ app.get('/generate-stream', async (req, res) => {
                 seed: seed ? parseInt(seed) : undefined,
                 guidance_scale: parseFloat(guidanceScale) || 3.5,
                 num_images: parseInt(numImages) || 1,
-                enable_safety_checker: enableSafetyChecker === 'true'
+                enable_safety_checker: enableSafetyChecker === 'true',
+                loras: loras
             },
             logs: true,
             onQueueUpdate: (update) => {
@@ -62,6 +73,23 @@ app.get('/generate-stream', async (req, res) => {
         console.error("Error generating image:", error);
         res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
         res.end();
+    }
+});
+
+app.get('/api/history', async (req, res) => {
+    const { model, page } = req.query;
+    const url = `https://rest.alpha.fal.ai/requests/by-endpoint?endpoint=${model}&sort_by=ended_at&page=${page}&size=20`;
+
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${BEARER_TOKEN}`
+            }
+        });
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error fetching history:', error);
+        res.status(500).json({ error: 'Failed to fetch history' });
     }
 });
 
