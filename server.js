@@ -34,7 +34,6 @@ app.get('/generate-stream', async (req, res) => {
     });
 
     const { prompt, imageSize, numSteps, seed, guidanceScale, numImages, enableSafetyChecker, model, loraUrl, loraScale } = req.query;
-
     try {
         const loras = loraUrl ? [{ path: loraUrl, scale: parseFloat(loraScale) || 1 }] : [];
 
@@ -46,7 +45,8 @@ app.get('/generate-stream', async (req, res) => {
                 seed: seed ? parseInt(seed) : undefined,
                 guidance_scale: parseFloat(guidanceScale) || 3.5,
                 num_images: parseInt(numImages) || 1,
-                enable_safety_checker: enableSafetyChecker === 'true',
+                enable_safety_checker: false,
+                safety_tolerance: 6,
                 loras: loras
             },
             logs: true,

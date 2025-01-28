@@ -847,6 +847,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             loras: loraUrl ? [{ path: loraUrl, scale: loraScale }] : [],
             embeddings: [],
             image_size: formData.get('imageSize'),
+            aspect_ratio: formData.get('aspectRatio'),
             num_images: totalImages,
             num_inference_steps: parseInt(formData.get('numStepsInput'), 10)
         };

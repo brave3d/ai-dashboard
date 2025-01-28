@@ -25,7 +25,7 @@
                         <select id="modelSelect" name="model" class="select select-bordered w-full">
                             <option value="">Select a model</option>
                         </select>
-                        <div id="thumbnails" class="mt-2"></div>
+                        <div id="thumbnails" style="display: none;" class="mt-2"></div>
                     </div>
 
                     <div class="form-control mb-4">
@@ -48,6 +48,21 @@
                                 <option value="portrait_16_9">Portrait 16:9</option>
                                 <option value="landscape_4_3">Landscape 4:3</option>
                                 <option value="landscape_16_9">Landscape 16:9</option>
+                            </select>
+                        </div>
+
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text">Aspect Ratio</span>
+                            </label>
+                            <select id="aspectRatio" name="aspectRatio" class="select select-bordered w-full">
+                                <option value="21:9">21:9</option>
+                                <option value="16:9" selected>16:9</option>
+                                <option value="4:3">4:3</option>
+                                <option value="1:1">1:1</option>
+                                <option value="3:4">3:4</option>
+                                <option value="9:16">9:16</option>
+                                <option value="9:21">9:21</option>
                             </select>
                         </div>
 
