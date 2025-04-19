@@ -10,12 +10,17 @@ fal.config({
 
 (async () => {
   try {
-    const result = await fal.subscribe("fal-ai/flux", {
+    console.log(`Generating image with aspect ratio: ${aspectRatio}`);
+
+    const result = await fal.subscribe("fal-ai/flux-pro/v1.1-ultra", {
       input: {
-        prompt: "a figurine of a fairy with pearls on a pink background, with a, stunning 3d render of a fairy, fairylike, fairy magnificent, beautiful fairy, fairy cgsociety, fairycore, beautiful fairie, beautiful fantasy art, fantasy art, faerie, fantasy beautiful, very beautiful fantasy art, astral fairy, beautiful detailed fantasy, beautiful adult fairy, digital art fantasy art, amazing fantasy art, digital art fantasy, fairy, beautiful fantasy",
-        enable_safety_checker: false, // Disable safe generation filter
-        num_images: 2,
-        image_size: "portrait_16_9"
+        prompt,
+        aspect_ratio: aspectRatio,
+        num_images: numImages,
+        enable_safety_checker: enableSafetyChecker,
+        output_format: outputFormat,
+        ...(seed !== undefined && { seed: seed }),
+        raw
       },
       logs: true,
       onQueueUpdate: (update) => {

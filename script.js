@@ -770,7 +770,75 @@ MODELS = [
       "model_path": "fal-ai/sam2/image"  
     }  
   ]  
+
+let msnry = null; // Masonry instance variable - MOVED TO GLOBAL SCOPE
+
+// Function to display ALL results in the main preview pane
+function displayResultImages(imageArray) { // Renamed parameter
+    const imagePlaceholder = document.getElementById('imagePlaceholder');
+    imagePlaceholder.innerHTML = ''; // Clear previous results
+
+    if (!imageArray || !Array.isArray(imageArray) || imageArray.length === 0) {
+        console.warn("displayResultImages: Invalid or empty image array received.", imageArray);
+        imagePlaceholder.innerHTML = '<p class="text-center text-error">No result images to display.</p>';
+        return;
+    }
+
+    console.log(`Displaying ${imageArray.length} result images.`);
+
+    // Loop through each image object in the array
+    imageArray.forEach((imageObj, index) => {
+        if (!imageObj || !imageObj.url) {
+            console.warn("Skipping invalid image object in array:", imageObj);
+            return; // Skip this one
+        }
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'image-container mb-4'; // Add margin between multiple images
+
+        const img = document.createElement('img');
+        img.src = imageObj.url;
+        img.alt = `Generated Result ${index + 1}`;
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.textContent = 'Download'; // Shorter text
+        downloadBtn.className = 'btn btn-sm btn-accent download-btn'; 
+        downloadBtn.addEventListener('click', () => {
+            // Use index for unique filename
+            const filename = `result-${index + 1}-${Date.now()}.png`; 
+            downloadImage(imageObj.url, filename)
+        });
+
+        imgContainer.appendChild(img);
+        imgContainer.appendChild(downloadBtn);
+        imagePlaceholder.appendChild(imgContainer); // Append each container
+    });
+}
+
+// Make sure downloadImage function exists (it might have been removed earlier)
+function downloadImage(url, filename) {
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+            return response.blob();
+        })
+        .then(blob => {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href); // Clean up blob URL
+        })
+        .catch(error => console.error('Error downloading image:', error));
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
+    // Add near top with other state variables
+    // let msnry = null; // Masonry instance variable - REMOVED FROM HERE
+    const historyItemSelector = '.history-entry'; // Selector for grid items
+
     const numStepsSlider = document.getElementById('numStepsSlider');
     const numStepsInput = document.getElementById('numStepsInput');
   
@@ -821,16 +889,194 @@ document.addEventListener('DOMContentLoaded', async function() {
     let totalImages = 0;
     let imagesGenerated = 0;
 
+    const imageSizeContainer = document.getElementById('imageSizeContainer');
+    const aspectRatioContainer = document.getElementById('aspectRatioContainer');
+    const modelSelect = document.getElementById('modelSelect');
+    const baseModelContainer = document.getElementById('baseModelContainer');
+    const historyContainer = document.getElementById('history');
+    const thumbnailSizeSlider = document.getElementById('thumbnailSizeSlider');
+    const thumbnailSizeLabel = document.getElementById('thumbnailSizeLabel');
+
+    // --- Thumbnail Size Slider Logic ---
+    const sizeMap = { // Map slider values to labels and CLASS NAMES
+        1: { label: "Small", className: 'w-1/6' },
+        2: { label: "Medium", className: 'w-1/4' },
+        3: { label: "Large", className: 'w-1/3' },
+        4: { label: "X-Large", className: 'w-1/2' }
+    };
+    let currentSizeClass = sizeMap[2].className; // Default size class
+
+    function setHistoryItemSize(sliderValue) {
+        const setting = sizeMap[sliderValue];
+        if (historyContainer && setting) {
+            const newSizeClass = setting.className;
+            
+            // Update label
+            if (thumbnailSizeLabel) {
+                thumbnailSizeLabel.textContent = setting.label;
+            }
+
+            // If class hasn't changed, do nothing
+            if (newSizeClass === currentSizeClass) return; 
+
+            console.log(`Changing history item size class from ${currentSizeClass} to ${newSizeClass}`);
+
+            // Update all existing items
+            const items = historyContainer.querySelectorAll('.history-entry');
+            items.forEach(item => {
+                item.classList.remove(currentSizeClass); // Remove old class
+                item.classList.add(newSizeClass);      // Add new class
+            });
+
+            currentSizeClass = newSizeClass; // Update current class tracking
+
+            // Tell Masonry to re-layout
+            if (msnry) {
+                console.log("Triggering Masonry layout due to size change.");
+                msnry.layout();
+            }
+
+        } else {
+            console.warn("Could not set history item size. Container or setting not found for value:", sliderValue);
+        }
+    }
+
+    // Set initial size class (but don't apply to items yet)
+    if (thumbnailSizeSlider) {
+        const initialSetting = sizeMap[thumbnailSizeSlider.value];
+        if (initialSetting) {
+            currentSizeClass = initialSetting.className;
+            if (thumbnailSizeLabel) thumbnailSizeLabel.textContent = initialSetting.label;
+        }
+    }
+
+    // Add event listener for real-time updates
+    if (thumbnailSizeSlider) {
+        thumbnailSizeSlider.addEventListener('input', (event) => {
+            setHistoryItemSize(event.target.value);
+        });
+    }
+    // --- End Thumbnail Size Slider Logic ---
+
+    // Function to initialize Masonry
+    function initMasonry() {
+        if (msnry) {
+            console.log("Destroying existing Masonry instance.");
+            msnry.destroy(); // Destroy previous instance if exists
+        }
+        imagesLoaded(historyContainer, function() {
+            console.log("Images loaded, initializing Masonry...");
+            msnry = new Masonry(historyContainer, {
+                itemSelector: '.history-entry',
+                percentPosition: true, // Good for percentage widths
+                gutter: 0 // Use padding on items for gutter
+            });
+            console.log("Masonry initialized.");
+        });
+    }
+
+    // Function to update dropdown visibility
+    function updateDropdownVisibility() {
+        const selectedModel = modelSelect.value;
+        console.log(`updateDropdownVisibility called. Selected Model: "${selectedModel}"`); // Log function call and value
+
+        // Hide all conditional containers initially
+        imageSizeContainer.style.display = 'none';
+        aspectRatioContainer.style.display = 'none';
+        baseModelContainer.style.display = 'none'; // Hide base model dropdown initially
+
+        if (selectedModel === 'fal-ai/flux-pro/v1.1-ultra') {
+            console.log('Showing aspectRatioContainer');
+            aspectRatioContainer.style.display = 'block';
+        } else if (selectedModel === 'fal-ai/lora') { 
+            console.log('Showing imageSizeContainer AND baseModelContainer for fal-ai/lora'); // Log specific path
+            imageSizeContainer.style.display = 'block';
+            baseModelContainer.style.display = 'block'; // Show base model dropdown for fal-ai/lora
+        } else if (selectedModel) { // For any other selected model (that's not empty)
+            console.log('Showing imageSizeContainer for other model:', selectedModel);
+            imageSizeContainer.style.display = 'block';
+            // Base model container remains hidden
+        } else {
+             console.log('No model selected, hiding all conditional containers.');
+        }
+        // If no model is selected (initial state), all remain hidden
+    }
+
+    // Add event listener to model select
+    if (modelSelect) {
+        modelSelect.addEventListener('change', () => { // Wrap listener to add log
+            console.log('#modelSelect change event fired.');
+            updateDropdownVisibility();
+        });
+    }
+
+    // Initial call to set correct visibility on page load (after models are loaded)
+    // We need to ensure this runs *after* loadModels populates the select
+    // Let's modify loadModels to call this function at the end
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const queryString = new URLSearchParams(formData).toString();
-        totalImages = parseInt(formData.get('numImages'), 10) || 1; // Get the total number of images to be generated
-        imagesGenerated = 0;
+        
+        // --- Build queryParams selectively ---
+        let queryParams = new URLSearchParams();
+        const selectedModelEndpoint = formData.get('model');
 
-        // Get LoRA URL and scale
+        // Set default/form values initially
+        let numSteps = formData.get('numStepsInput') || formData.get('numStepsSlider');
+        let guidanceScale = formData.get('guidanceScaleInput') || formData.get('guidanceScaleSlider');
+        let imageSize = formData.get('imageSize');
+        let aspectRatio = formData.get('aspectRatio');
         const loraUrl = formData.get('loraUrl');
-        const loraScale = parseFloat(formData.get('loraScale')) || 1;
+        const loraScale = formData.get('loraScale') || '1';
+        let includeLoras = !!loraUrl; // Flag to check if LoRAs should be included
+        const baseModelName = formData.get('baseModelName'); // Get selected base model name
+
+        // Append common parameters first
+        queryParams.append('model', selectedModelEndpoint);
+        queryParams.append('prompt', formData.get('prompt'));
+        queryParams.append('seed', formData.get('seed') || 'random');
+        queryParams.append('numImages', formData.get('numImages') || '1');
+        queryParams.append('enableSafetyChecker', formData.get('enableSafetyChecker') ? 'true' : 'false');
+
+        // --- Model-Specific Parameter Adjustments ---
+        if (selectedModelEndpoint === 'fal-ai/flux-pro/v1.1-ultra') {
+            queryParams.append('aspectRatio', aspectRatio);
+            includeLoras = false; 
+        } else if (selectedModelEndpoint === 'fal-ai/fast-turbo-diffusion') {
+            numSteps = '4'; 
+            guidanceScale = '1.0'; 
+            queryParams.append('imageSize', imageSize);
+            includeLoras = false; 
+        } else if (selectedModelEndpoint === 'fal-ai/lora') {
+             queryParams.append('imageSize', imageSize); // Use the string enum like 'square_hd'
+             if (baseModelName) { // Send the selected base model name to backend
+                queryParams.append('baseModelName', baseModelName);
+             }
+             // includeLoras remains true if loraUrl was provided
+        } else { // Default for other models 
+            queryParams.append('imageSize', imageSize); // Assuming others use string enums too, adjust if needed
+            includeLoras = false; 
+        }
+
+        // Append adjusted/common numerical parameters
+        queryParams.append('numSteps', numSteps);
+        queryParams.append('guidanceScale', guidanceScale);
+
+        // Append LoRA parameters only if applicable for the selected model and provided
+        if (includeLoras && loraUrl) {
+            queryParams.append('loraUrl', loraUrl);
+            queryParams.append('loraScale', loraScale);
+        }
+        // --- End Model-Specific Adjustments ---
+
+
+        const queryString = queryParams.toString();
+        console.log("QueryString:", queryString); // Log the query string for debugging
+        // --- End selective build ---
+
+        totalImages = parseInt(formData.get('numImages'), 10) || 1;
+        imagesGenerated = 0;
 
         // Show loading spinner and disable generate button
         loadingSpinner.style.display = 'inline-block';
@@ -840,38 +1086,88 @@ document.addEventListener('DOMContentLoaded', async function() {
         logsContainer.innerHTML = '';
         imagePlaceholder.innerHTML = '';
 
-        // Create JSON payload
-        const payload = {
-            prompt: formData.get('prompt'),
-            model_name: formData.get('modelSelect'),
-            loras: loraUrl ? [{ path: loraUrl, scale: loraScale }] : [],
-            embeddings: [],
-            image_size: formData.get('imageSize'),
-            aspect_ratio: formData.get('aspectRatio'),
-            num_images: totalImages,
-            num_inference_steps: parseInt(formData.get('numStepsInput'), 10)
-        };
-
-        const eventSource = new EventSource(`/generate-stream?${queryString}`);
+        const eventSource = new EventSource(`/generate-stream?${queryString}`); // Use the selectively built queryString
 
         eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            if (data.type === 'log') {
-                appendLog(data.message);
-            } else if (data.type === 'result') {
-                imagesGenerated++;
-                displayImages(data.data.images);
-                handleFinalStream(data.data); // Call handleFinalStream with the final data
-                if (imagesGenerated === totalImages) {
+            try { // Added try...catch block for robust parsing
+                const data = JSON.parse(event.data);
+                console.log('Received data:', data);
+
+                if (data.type === 'log') {
+                    appendLog(data.message);
+                } else if (data.type === 'result') {
+                    imagesGenerated++;
+                    
+                    let images = null;
+                    
+                    if (data.data && Object.keys(data.data).length > 0) {
+                        if (Array.isArray(data.data.images) && data.data.images.length > 0) {
+                            images = data.data.images;
+                        } else if (data.data.image) { 
+                            images = [data.data.image];
+                        } else if (data.data.url) { 
+                             images = [{ url: data.data.url }];
+                        }
+                         else if (!images) {
+                           console.error('Result received, but data.data is missing image information:', data.data);
+                           appendLog('Error: Received result from server, but it did not contain image data. Check server logs.');
+                        }
+                    }
+                    else if (Array.isArray(data.images) && data.images.length > 0) { images = data.images; }
+                    else if (data.image) { images = [data.image]; }
+                    else if (data.url) { images = [{ url: data.url }]; }
+
+                    // --- Check images array and call displayResultImages --- 
+                    if (images && images.length > 0) { 
+                        
+                        // --- Display ALL images in the result pane --- 
+                        displayResultImages(images); // Pass the whole array
+                        // --- End display ---
+
+                        // --- Handle history (unchanged) ---
+                        console.log("Attempting to handle final stream data:", data.data && Object.keys(data.data).length > 0 ? data.data : data); 
+                        handleFinalStream(data.data && Object.keys(data.data).length > 0 ? data.data : data); 
+                        // --- End history handling ---
+
+                    } else {
+                        // Error logged above if data.data was present but empty
+                        if (!(data.data && Object.keys(data.data).length > 0)) {
+                           console.error('Could not extract valid image data from received result (data.data missing or empty):', data);
+                           appendLog('Error: Could not find valid image data in response structure. Check server logs.');
+                           // Maybe display an error image in the result pane?
+                           displayResultImages(null); // Pass null to clear/show error
+                        }
+                    }
+                    // --- End Check --- 
+                    
+                    if (imagesGenerated === totalImages) {
+                        eventSource.close();
+                        loadingSpinner.style.display = 'none';
+                        generateBtn.disabled = false;
+                    }
+                } else if (data.type === 'error') {
+                    // Handle server-sent errors (improved)
+                    let errorMessage = data.message || 'Unknown error occurred on server';
+                    console.error('API Error Reported:', data);
+                    if (data.details && data.status === 422) {
+                         if (Array.isArray(data.details.detail)) {
+                            const validationErrors = data.details.detail.map(err => {
+                                return `Field '${err.loc.join('.')}': ${err.msg}`;
+                            }).join('\n');
+                            errorMessage = `Validation error: ${validationErrors}`;
+                         }
+                    }
+                    appendLog(`Error: ${errorMessage.replace(/\n/g, '<br>')}`); // Display multiline errors
                     eventSource.close();
-                    // Hide loading spinner and enable generate button
                     loadingSpinner.style.display = 'none';
                     generateBtn.disabled = false;
+                } else {
+                    console.warn('Unknown data type received:', data);
                 }
-            } else if (data.type === 'error') {
-                appendLog(`Error: ${data.message}`);
+            } catch (error) {
+                console.error('Error processing message:', error, event.data);
+                appendLog('Error processing server response. Invalid JSON? See console.');
                 eventSource.close();
-                // Hide loading spinner and enable generate button
                 loadingSpinner.style.display = 'none';
                 generateBtn.disabled = false;
             }
@@ -895,141 +1191,352 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     }
 
+    let allHistoryImages = []; // Keep track of images displayed in the modal
+    let currentHistoryImageIndex = 0;
+    let currentHistoryPage = 1; // Track current page for infinite scroll
+    let isLoadingHistory = false; // Prevent multiple loads
+    let hasMoreHistory = true; // Assume more pages initially
+    let currentHistoryEndpoint = null; // Track the endpoint being scrolled
+
     function handleFinalStream(data) {
+        console.log("Inside handleFinalStream with data:", data); // Log entry
         const logsContainer = document.getElementById('logs');
         const logEntry = document.createElement('div');
 
-        // Format timings to readable time
-        const inferenceTime = data.timings.inference.toFixed(2) + ' seconds';
+        try { 
+            const inferenceTime = data.timings && data.timings.inference ? data.timings.inference.toFixed(2) + ' seconds' : 'N/A';
+            const prompt = data.prompt || '[Prompt missing]';
+            const seed = data.seed || '[Seed missing]';
+            const has_nsfw_concepts = data.has_nsfw_concepts !== undefined ? data.has_nsfw_concepts : '[NSFW status missing]';
+            const images = (data.images && Array.isArray(data.images)) ? data.images : []; // Keep full image objects
 
-        logEntry.textContent = `Prompt: ${data.prompt}, Seed: ${data.seed}, NSFW Concepts: ${data.has_nsfw_concepts}, Timings: Inference - ${inferenceTime}`;
-        logsContainer.appendChild(logEntry);
-        logsContainer.scrollTop = logsContainer.scrollHeight;
+            if (images.length === 0) {
+                 console.warn("handleFinalStream: No image objects found in the data.", data);
+                 return; 
+            }
 
-        // Save to IndexedDB
-        const images = data.images.map(image => image.url);
-        const historyData = {
-            prompt: data.prompt,
-            seed: data.seed,
-            has_nsfw_concepts: data.has_nsfw_concepts,
-            timings: JSON.stringify(data.timings),
-            images: images
-        };
+            logEntry.textContent = `Prompt: ${prompt}, Seed: ${seed}, NSFW Concepts: ${has_nsfw_concepts}, Timings: Inference - ${inferenceTime}`;
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
 
-        console.log('Saving to history:', historyData); // Add this line for debugging
-        saveToHistory(historyData);
-    }
-
-    function displayImages(imageArray) {
-        imagePlaceholder.innerHTML = ''; // Clear previous images
-        imageArray.forEach((image, index) => {
-            const imgContainer = document.createElement('div');
-            imgContainer.className = 'image-container';
-
-            const img = document.createElement('img');
-            img.src = image.url;
-            img.alt = `Generated Image ${index + 1}`;
-            img.style.display = 'block';
-
-            const downloadBtn = document.createElement('button');
-            downloadBtn.textContent = 'Download';
-            downloadBtn.className = 'btn btn-accent download-btn'; // Add btn-accent class
-            downloadBtn.addEventListener('click', () => downloadImage(image.url, `generated-image-${index + 1}.png`));
-
-            imgContainer.appendChild(img);
-            imgContainer.appendChild(downloadBtn);
-            imagePlaceholder.appendChild(imgContainer);
-        });
-
-        // Hide navigation buttons as all images are displayed at once
-        prevBtn.style.display = 'none';
-        nextBtn.style.display = 'none';
-    }
-
-    function downloadImage(url, filename) {
-        fetch(url)
-            .then(response => response.blob())
-            .then(blob => {
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            })
-            .catch(error => console.error('Error downloading image:', error));
-    }
-
-    // Initialize IndexedDB
-    const db = await idb.openDB('historyDB', 1, {
-        upgrade(db) {
-            db.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
-        }
-    });
-
-    // Function to save data to IndexedDB
-    async function saveToHistory(data) {
-        await db.add('history', data);
-        displayHistory();
-    }
-
-    // Function to display history from IndexedDB
-    let allImages = [];
-    let currentImageIndex = 0;
-
-    async function displayHistory() {
-        const historyContainer = document.getElementById('history');
-        historyContainer.innerHTML = ''; // Clear previous history
-
-        const allEntries = await db.getAll('history');
-        allImages = []; // Reset the global list of images
-
-        allEntries.reverse().forEach(entry => {
-            entry.images.forEach((image, index) => {
-                const historyEntry = document.createElement('div');
-                historyEntry.className = 'history-entry';
-
-                const img = document.createElement('img');
-                img.src = image;
-                img.alt = 'Generated Image';
-                img.className = 'thumbnail'; // Add thumbnail class
-                img.addEventListener('click', () => {
-                    currentImageIndex = allImages.findIndex(imgObj => imgObj.url === image);
-                    showImage(currentImageIndex);
-                    document.getElementById('modalPrompt').textContent = `Prompt: ${entry.prompt}`;
-                    document.getElementById('modalSeed').textContent = `Seed: ${entry.seed}`;
-                    document.getElementById('modalNSFW').textContent = `NSFW Concepts: ${entry.has_nsfw_concepts}`;
-                    document.getElementById('modalTimings').textContent = `Timings: ${entry.timings}`;
-                    document.getElementById('imageModal').classList.add('modal-open');
-                });
-
-                historyEntry.appendChild(img);
-                historyContainer.appendChild(historyEntry);
-
-                // Add image to the global list with its metadata
-                allImages.push({ url: image, prompt: entry.prompt, seed: entry.seed, has_nsfw_concepts: entry.has_nsfw_concepts, timings: entry.timings });
+            // Instead of saving to DB, directly add to DOM
+            images.forEach(image => {
+                 // Create data object mimicking history entry structure for consistency
+                 const imageDataForHistory = {
+                     url: image.url,
+                     prompt: prompt,
+                     seed: seed,
+                     has_nsfw_concepts: has_nsfw_concepts,
+                     // Include other details if needed (e.g., timings, model used?)
+                     // timings: data.timings ? JSON.stringify(data.timings) : '[Timings missing]',
+                 };
+                console.log('Prepending new image to history DOM:', imageDataForHistory);
+                appendImageToHistoryDOM(imageDataForHistory, true); // Prepend new image
             });
-        });
+
+        } catch (error) {
+             console.error("Error inside handleFinalStream:", error, "Original data:", data);
+             appendLog("Error processing final result data. See console.");
+        }
     }
 
+    // Function to add a single image element to the history grid
+    function appendImageToHistoryDOM(entryData, prepend = false) {
+        const historyContainer = document.getElementById('history');
+        const historyEntry = document.createElement('div');
+        historyEntry.className = `history-entry ${currentSizeClass}`; // Apply current size class
+        historyEntry.id = `history-item-${entryData.request_id}`;
+
+        const img = document.createElement('img'); 
+        img.src = entryData.url;
+        img.alt = 'Generated Image';
+        img.className = 'thumbnail';
+        img.loading = 'lazy';
+        
+        if (entryData.request_id) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'history-delete-btn';
+            deleteBtn.innerHTML = '&times;'; 
+            deleteBtn.title = 'Delete this result';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); 
+                handleDeleteHistoryItem(entryData.request_id, historyEntry);
+            });
+            historyEntry.appendChild(deleteBtn);
+        } else {
+            console.warn("Cannot add delete button, request_id missing for:", entryData.url);
+        }
+        
+        historyEntry.appendChild(img); // Add image AFTER button
+
+        // Prepare modal data object
+        const imageObjForModal = {
+             url: entryData.url,
+             prompt: entryData.prompt || '',
+             seed: entryData.seed || '',
+             has_nsfw_concepts: entryData.has_nsfw_concepts !== undefined ? entryData.has_nsfw_concepts : '',
+             timings: entryData.timings || '',
+             request_id: entryData.request_id
+         };
+
+        // --- Masonry Integration --- 
+        if (prepend) {
+            historyContainer.insertBefore(historyEntry, historyContainer.firstChild);
+            allHistoryImages.unshift(imageObjForModal);
+        } else {
+            historyContainer.appendChild(historyEntry);
+            allHistoryImages.push(imageObjForModal);
+        }
+
+        if (msnry) {
+            imagesLoaded(historyEntry, function() {
+                console.log(`Image loaded for ${entryData.request_id || 'new item'}, adding to Masonry.`);
+                if (prepend) {
+                    msnry.prepended(historyEntry); 
+                } else {
+                    msnry.appended(historyEntry);  
+                }
+                 // Optional layout trigger 
+                 // msnry.layout(); 
+            });
+        } else {
+            console.warn("Masonry not initialized yet when trying to add item:", entryData.request_id);
+        }
+         // --- End Masonry Integration --- 
+
+         img.addEventListener('click', () => { 
+            currentHistoryImageIndex = allHistoryImages.findIndex(item => item.request_id === entryData.request_id);
+            if (currentHistoryImageIndex === -1) currentHistoryImageIndex = 0; 
+            showImage(currentHistoryImageIndex);
+            document.getElementById('modalPrompt').textContent = `Prompt: ${entryData.prompt || 'N/A'}`;
+            document.getElementById('modalSeed').textContent = `Seed: ${entryData.seed || 'N/A'}`;
+            document.getElementById('modalNSFW').textContent = `NSFW Concepts: ${entryData.has_nsfw_concepts !== undefined ? entryData.has_nsfw_concepts : 'N/A'}`;
+            document.getElementById('modalTimings').textContent = `Timings: ${entryData.timings || 'N/A'}`; 
+            document.getElementById('imageModal').classList.add('modal-open');
+         });
+    }
+
+    // Function to display history - Now fetches from API and supports pagination
+    async function displayHistory(endpoint = null, page = 1) {
+        // If the endpoint changes, reset pagination
+        if (endpoint && endpoint !== currentHistoryEndpoint) {
+            console.log(`History endpoint changed from ${currentHistoryEndpoint} to ${endpoint}. Resetting page.`);
+            currentHistoryPage = 1;
+            hasMoreHistory = true;
+            currentHistoryEndpoint = endpoint;
+            // Clear previous history immediately for responsiveness
+            const historyContainer = document.getElementById('history');
+            historyContainer.innerHTML = ''; 
+            allHistoryImages = []; 
+        } else if (!endpoint && !currentHistoryEndpoint) {
+            // Use the first available model if neither current nor new endpoint is set
+            currentHistoryEndpoint = modelSelect.value || (modelSelect.options[1] ? modelSelect.options[1].value : null);
+            console.log(`Initial history endpoint set to: ${currentHistoryEndpoint}`);
+        }
+
+        const modelToFetch = currentHistoryEndpoint;
+
+        // Only proceed if we have a valid, non-empty model endpoint identifier
+        if (!modelToFetch || modelToFetch === "") { 
+            console.warn("displayHistory: No valid model endpoint selected. Skipping history fetch.");
+            const historyContainer = document.getElementById('history');
+            historyContainer.innerHTML = '<p class="text-center col-span-4">Select a model to view its history.</p>';
+            isLoadingHistory = false; // Ensure loading state is reset
+            hasMoreHistory = false; // No history to load
+            return;
+        }
+
+        // Prevent loading if already loading or no more pages
+        if (isLoadingHistory || (page > 1 && !hasMoreHistory)) {
+            console.log(`Skipping history load. isLoading: ${isLoadingHistory}, page: ${page}, hasMore: ${hasMoreHistory}`);
+            return;
+        }
+
+        isLoadingHistory = true;
+        const historyContainer = document.getElementById('history');
+        let newElements = []; // Keep track of new elements added in this batch
+
+        if (page === 1) {
+            // Check if msnry variable exists and is not null before destroying
+            if (typeof msnry !== 'undefined' && msnry) { 
+                 console.log("Destroying Masonry for page 1 load.");
+                 msnry.destroy();
+                 msnry = null;
+            } else {
+                 console.log("Masonry instance not found or not defined, skipping destroy.");
+            }
+            historyContainer.innerHTML = '';
+            allHistoryImages = [];
+            hasMoreHistory = true;
+        }
+        
+        const loadingIndicatorId = `loading-page-${page}`;
+        if (page > 1) {
+             const loadingDiv = document.createElement('div');
+             loadingDiv.id = loadingIndicatorId;
+             loadingDiv.className = 'text-center col-span-4 p-4'; 
+             loadingDiv.innerHTML = '<span class="loading loading-dots loading-lg"></span>';
+             // Append to body temporarily? Or a dedicated loading area?
+             // Appending directly to history container might interfere with masonry
+             document.body.appendChild(loadingDiv); // Append to body
+        }
+
+        console.log(`Fetching history for endpoint: ${modelToFetch}, page: ${page}`); // modelToFetch needs defining earlier
+        try {
+            const modelToFetch = currentHistoryEndpoint; // Get the current endpoint
+            if (!modelToFetch) throw new Error("No history endpoint selected"); // Basic check
+            
+            const historyUrl = `/api/history?endpoint=${encodeURIComponent(modelToFetch)}&page=${page}`;
+            const response = await fetch(historyUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch history: ${response.status} ${response.statusText}`);
+            }
+            
+            const historyData = await response.json();
+            console.log("Received history data:", historyData);
+
+            const loadingDiv = document.getElementById(loadingIndicatorId);
+            if (loadingDiv) loadingDiv.remove();
+
+            if (historyData && Array.isArray(historyData.items)) {
+                if (historyData.items.length === 0) {
+                    console.log("No more history items found.");
+                    hasMoreHistory = false; 
+                    if (page === 1) { 
+                         historyContainer.innerHTML = '<p class="text-center col-span-4">No history found for this model.</p>';
+                    }
+                } else {
+                    
+                    historyData.items.forEach(item => {
+                        
+                        if (item.json_output && Array.isArray(item.json_output.images) && item.json_output.images.length > 0) {
+                             const firstImage = item.json_output.images[0]; 
+                             const entryData = {
+                                 url: firstImage.url,
+                                 prompt: item.json_output.prompt || (item.json_input ? item.json_input.prompt : '[Prompt N/A]'), 
+                                 seed: item.json_output.seed !== undefined ? item.json_output.seed : '[Seed N/A]',
+                                 has_nsfw_concepts: Array.isArray(item.json_output.has_nsfw_concepts) ? item.json_output.has_nsfw_concepts[0] : '[NSFW N/A]',
+                                 request_id: item.request_id || null 
+                             };
+
+                            const historyEntry = document.createElement('div');
+                            historyEntry.className = `history-entry ${currentSizeClass}`; 
+                            historyEntry.id = `history-item-${entryData.request_id}`;
+
+                            const img = document.createElement('img');
+                            img.src = entryData.url;
+                            img.alt = 'Generated Image';
+                            img.className = 'thumbnail';
+                            img.loading = 'lazy';
+
+                            if (entryData.request_id) {
+                                 const deleteBtn = document.createElement('button');
+                                 deleteBtn.className = 'history-delete-btn';
+                                 deleteBtn.innerHTML = '&times;';
+                                 deleteBtn.title = 'Delete this result';
+                                 deleteBtn.addEventListener('click', (e) => {
+                                     e.stopPropagation();
+                                     handleDeleteHistoryItem(entryData.request_id, historyEntry);
+                                 });
+                                 historyEntry.appendChild(deleteBtn);
+                             } else {
+                                console.warn("Cannot add delete button, request_id missing for:", entryData.url);
+                             }
+
+                            historyEntry.appendChild(img); 
+                             
+                             img.addEventListener('click', () => { 
+                                  currentHistoryImageIndex = allHistoryImages.findIndex(item => item.request_id === entryData.request_id);
+                                  if (currentHistoryImageIndex === -1) currentHistoryImageIndex = 0; 
+                                  showImage(currentHistoryImageIndex);
+                                  document.getElementById('modalPrompt').textContent = `Prompt: ${entryData.prompt || 'N/A'}`;
+                                  document.getElementById('modalSeed').textContent = `Seed: ${entryData.seed || 'N/A'}`;
+                                  document.getElementById('modalNSFW').textContent = `NSFW Concepts: ${entryData.has_nsfw_concepts !== undefined ? entryData.has_nsfw_concepts : 'N/A'}`;
+                                  document.getElementById('modalTimings').textContent = `Timings: ${entryData.timings || 'N/A'}`; 
+                                  document.getElementById('imageModal').classList.add('modal-open');
+                             });
+                             
+                             newElements.push(historyEntry); 
+                             allHistoryImages.push({
+                                 url: entryData.url,
+                                 prompt: entryData.prompt,
+                                 seed: entryData.seed,
+                                 has_nsfw_concepts: entryData.has_nsfw_concepts,
+                                 request_id: entryData.request_id
+                             }); 
+                        } else {
+                            console.warn("History item skipped - missing json_output or json_output.images:", item);
+                        }
+                    });
+
+                    // Append all new elements to the container
+                    newElements.forEach(el => historyContainer.appendChild(el));
+
+                    // --- Initialize or Add to Masonry ---
+                    if (page === 1) {
+                        initMasonry(); // Initialize Masonry after first page elements added
+                    } else if (msnry && newElements.length > 0) {
+                         imagesLoaded(newElements, function() {
+                             console.log(`Images loaded for page ${page}, adding ${newElements.length} items to Masonry.`);
+                             msnry.appended(newElements); // Add new items to layout
+                             // Optional: msnry.layout(); 
+                         });
+                    }
+                     // --- End Masonry ---
+
+                    currentHistoryPage = page;
+                    hasMoreHistory = true;
+                }
+            } else {
+                 console.error("Unexpected history data structure:", historyData);
+                 hasMoreHistory = false; 
+                 if (page === 1) {
+                      historyContainer.innerHTML = '<p class="text-center col-span-4">Error parsing history data.</p>';
+                 }
+            }
+
+        } catch (error) {
+            console.error("Error fetching or displaying history:", error);
+            hasMoreHistory = false; 
+            const loadingDiv = document.getElementById(loadingIndicatorId);
+            if (loadingDiv) loadingDiv.remove();
+            if (page === 1) {
+                 historyContainer.innerHTML = `<p class="text-center col-span-4 text-error">Error loading history. Check console.</p>`;
+            } else {
+                historyContainer.innerHTML += `<p class="text-center col-span-4 text-error">Error loading more history.</p>`;
+            }
+        } finally {
+             isLoadingHistory = false;
+             console.log(`History load finished. isLoading: ${isLoadingHistory}, hasMore: ${hasMoreHistory}, currentPage: ${currentHistoryPage}`);
+        }
+    }
+
+    // Function to show image in modal - Now uses allHistoryImages array
     function showImage(index) {
-        if (allImages.length > 0) {
-            currentImageIndex = (index + allImages.length) % allImages.length;
-            const imageObj = allImages[currentImageIndex];
+        if (allHistoryImages.length > 0) {
+            currentHistoryImageIndex = (index + allHistoryImages.length) % allHistoryImages.length;
+            const imageObj = allHistoryImages[currentHistoryImageIndex];
+            if (!imageObj) {
+                console.error("showImage: Invalid image object at index", currentHistoryImageIndex);
+                return;
+            }
             document.getElementById('modalImage').src = imageObj.url;
-            document.getElementById('modalPrompt').textContent = `Prompt: ${imageObj.prompt}`;
-            document.getElementById('modalSeed').textContent = `Seed: ${imageObj.seed}`;
-            document.getElementById('modalNSFW').textContent = `NSFW Concepts: ${imageObj.has_nsfw_concepts}`;
-            document.getElementById('modalTimings').textContent = `Timings: ${imageObj.timings}`;
+            document.getElementById('modalPrompt').textContent = `Prompt: ${imageObj.prompt || 'N/A'}`;
+            document.getElementById('modalSeed').textContent = `Seed: ${imageObj.seed || 'N/A'}`;
+            document.getElementById('modalNSFW').textContent = `NSFW Concepts: ${imageObj.has_nsfw_concepts !== undefined ? imageObj.has_nsfw_concepts : 'N/A'}`;
+            document.getElementById('modalTimings').textContent = `Timings: ${imageObj.timings || 'N/A'}`; // Display timings if available
+        } else {
+             console.warn("showImage called but allHistoryImages is empty.");
         }
     }
 
     function showPreviousImage() {
-        showImage(currentImageIndex - 1);
+        showImage(currentHistoryImageIndex - 1);
     }
 
     function showNextImage() {
-        showImage(currentImageIndex + 1);
+        showImage(currentHistoryImageIndex + 1);
     }
 
     document.addEventListener('keydown', (event) => {
@@ -1044,12 +1551,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Add event listeners for the new buttons
     document.getElementById('downloadBtn').addEventListener('click', () => {
-        const imageObj = allImages[currentImageIndex];
-        downloadImage(imageObj.url, `generated-image-${currentImageIndex + 1}.png`);
+        const imageObj = allHistoryImages[currentHistoryImageIndex];
+        downloadImage(imageObj.url, `generated-image-${currentHistoryImageIndex + 1}.png`);
     });
 
     document.getElementById('reusePromptBtn').addEventListener('click', () => {
-        const imageObj = allImages[currentImageIndex];
+        const imageObj = allHistoryImages[currentHistoryImageIndex];
         document.getElementById('prompt').value = imageObj.prompt; // Update the textarea with ID 'prompt'
         document.getElementById('imageModal').classList.remove('modal-open');
     });
@@ -1058,37 +1565,60 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('imageModal').classList.remove('modal-open');
     });
 
-    // Call displayHistory on page load to show existing history
-    displayHistory();
+    // --- Add listener to close modal on backdrop click --- 
+    const imageModal = document.getElementById('imageModal');
+    if (imageModal) {
+        imageModal.addEventListener('click', (event) => {
+            // Check if the direct click target is the modal backdrop itself
+            if (event.target === imageModal) { 
+                imageModal.classList.remove('modal-open');
+                console.log("Modal closed by clicking backdrop."); 
+            }
+        });
+    }    
+    // --- End backdrop click listener --- 
+
+    // Call displayHistory on page load - moved inside loadModels to ensure modelSelect is populated
+    // displayHistory();
 
     async function loadModels() {
         try {
             const response = await fetch('models.json');
             const models = await response.json();
             const select = document.getElementById('modelSelect');
-            const thumbnails = document.getElementById('thumbnails');
-    
+            select.innerHTML = '<option value="">Select an endpoint</option>'; 
             models.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model.model_path;
                 option.textContent = model.name;
                 select.appendChild(option);
-    
-                const img = document.createElement('img');
-                img.src = model.thumbnail;
-                img.alt = model.name;
-                img.style.display = 'none';
-                img.id = `thumbnail-${model.model_path}`;
-                thumbnails.appendChild(img);
             });
-    
-            select.addEventListener('change', (event) => {
-                document.querySelectorAll('#thumbnails img').forEach(img => {
-                    img.style.display = 'none';
-                });
-                const selectedModel = event.target.value;
-                document.getElementById(`thumbnail-${selectedModel}`).style.display = 'block';
-            });
+
+            let initialModelEndpoint = ""; 
+            if (select.options.length > 1) { 
+                select.selectedIndex = 1; 
+                initialModelEndpoint = select.value; 
+                console.log(`Initial model selected: ${initialModelEndpoint}`);
+            } else {
+                 console.log("No models loaded, cannot set initial selection.");
+            }
+             
+            // --- Reset history state on model change --- 
+             select.addEventListener('change', () => { 
+                const selectedValue = select.value;
+                console.log(`#modelSelect change event fired. Value: "${selectedValue}"`); 
+                // No need to reset vars here, displayHistory handles it
+                displayHistory(selectedValue, 1); // Explicitly call page 1 for the new model
+             });
+             // --- End Reset --- 
+
+            console.log('loadModels finished, calling updateDropdownVisibility and initial displayHistory.');
+            updateDropdownVisibility(); 
+            
+            console.log(`Calling initial displayHistory with endpoint: "${initialModelEndpoint}"`);
+
+            displayHistory(initialModelEndpoint, 1); // Explicitly call page 1
+
         } catch (error) {
             console.error('Error loading models:', error);
         }
@@ -1114,6 +1644,78 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         } else {
             alert('Please select a model');
+        }
+    }
+
+    // Add Scroll Event Listener for Infinite Scroll
+    window.addEventListener('scroll', () => {
+        // Check if user is near the bottom
+        // Use document.documentElement for broader compatibility
+        const scrollHeight = document.documentElement.scrollHeight;
+        const scrollTop = document.documentElement.scrollTop || document.body.scrollTop; // Handle cross-browser
+        const clientHeight = document.documentElement.clientHeight;
+        const threshold = 300; // Pixels from bottom to trigger load
+
+        if (scrollHeight - scrollTop <= clientHeight + threshold) {
+            // Check if not already loading and if more pages exist
+            if (!isLoadingHistory && hasMoreHistory) {
+                console.log("Near bottom, attempting to load next history page...");
+                displayHistory(currentHistoryEndpoint, currentHistoryPage + 1);
+            }
+        }
+    });
+
+    // New function to handle deletion
+    async function handleDeleteHistoryItem(requestId, elementToRemove) {
+        console.log(`Attempting to delete history item with request ID: ${requestId}`);
+        if (!confirm(`Are you sure you want to delete this history item?\nRequest ID: ${requestId}\nThis will attempt to remove the image data from Fal storage.`)) {
+            return;
+        }
+
+        try {
+            elementToRemove.style.opacity = '0.5'; // Visual feedback: Dim the item
+            const response = await fetch(`/api/delete-fal-request/${requestId}`, {
+                method: 'POST', // Use POST as it's performing an action
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Deletion successful:', result);
+
+                // --- Masonry Integration --- 
+                if (typeof msnry !== 'undefined' && msnry) {
+                     console.log(`Removing element ${requestId} from Masonry.`);
+                     msnry.remove(elementToRemove); // Tell Masonry to remove the element
+                     console.log(`Triggering Masonry layout after removal.`);
+                     msnry.layout(); // Re-calculate layout
+                } else {
+                     console.warn("Masonry instance not found, removing element directly from DOM.");
+                     elementToRemove.remove(); // Fallback: Remove directly if masonry isn't ready
+                }
+                 // --- End Masonry Integration ---
+                 
+                 // Note: elementToRemove.remove() might be redundant now, but keep for safety
+                 if (elementToRemove.parentNode) { // Check if it wasn't already removed by masonry.layout()
+                    elementToRemove.remove();
+                 }
+
+                // Remove from the modal array
+                const indexToRemove = allHistoryImages.findIndex(item => item.request_id === requestId);
+                if (indexToRemove > -1) {
+                    allHistoryImages.splice(indexToRemove, 1);
+                    console.log(`Removed item ${requestId} from modal array.`);
+                }
+
+            } else {
+                const errorResult = await response.json();
+                console.error(`Failed to delete item ${requestId}:`, response.status, errorResult);
+                alert(`Error deleting item: ${errorResult.error || response.statusText}`);
+                elementToRemove.style.opacity = '1'; // Restore opacity on failure
+            }
+        } catch (error) {
+            console.error(`Network or other error deleting item ${requestId}:`, error);
+            alert(`Error deleting item: ${error.message}`);
+            elementToRemove.style.opacity = '1'; // Restore opacity on failure
         }
     }
 });
