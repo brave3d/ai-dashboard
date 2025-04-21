@@ -364,6 +364,13 @@
       "model_path": "fal-ai/fast-turbo-diffusion"  
     },  
     {  
+      "name": "Stable Diffusion v3.5 Large",  
+      "thumbnail": "https://fal.ai/static/media/stable-diffusion-v35-large.7039467a.png",  
+      "summary": "Advanced version of Stable Diffusion for high-quality image generation.",  
+      "category": "text-to-image",  
+      "model_path": "fal-ai/stable-diffusion-v35-large"  
+    },  
+    {  
       "name": "Latent Consistency Models (v1.5/XL)",  
       "thumbnail": "https://fal.ai/static/media/fast-lcm-diffusion.5313747f.png",  
       "summary": "Run SDXL at the speed of light",  

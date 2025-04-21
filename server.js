@@ -369,36 +369,25 @@ app.get('/generate-video-stream', async (req, res) => {
 
 // Endpoint to fetch video history
 app.get('/api/video-history', async (req, res) => {
-    console.log("--- Handling /api/video-history request ---");
-    const { endpoint, page = 1 } = req.query;
+    console.log("--- Handling /api/video-history request ---"); 
+    const { endpoint, page = 1 } = req.query; 
     if (!endpoint) return res.status(400).json({ error: 'Missing endpoint query parameter' });
-
-    // Extract token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        console.error("Authorization header missing or invalid.");
-        return res.status(401).json({ error: 'Unauthorized: Missing or invalid Bearer token' });
-    }
-    const bearerToken = authHeader.split(' ')[1];
-
-    // Remove check for process.env.BEARER_TOKEN, as we now get it from the user
-    // if (!process.env.BEARER_TOKEN) return res.status(500).json({ error: 'Server configuration error: Missing Bearer Token' });
+    if (!process.env.BEARER_TOKEN) return res.status(500).json({ error: 'Server configuration error: Missing Bearer Token' });
 
     const encodedEndpoint = encodeURIComponent(endpoint);
-    const url = `https://rest.alpha.fal.ai/requests/by-endpoint?endpoint=${encodedEndpoint}&sort_by=ended_at&page=${page}&size=20`;
-    console.log(`Constructed Fal video history URL: ${url}`);
+    const url = `https://rest.alpha.fal.ai/requests/by-endpoint?endpoint=${encodedEndpoint}&sort_by=ended_at&page=${page}&size=20`; 
+    console.log(`Constructed Fal video history URL: ${url}`); 
 
     try {
         const response = await axios.get(url, {
-            headers: { Authorization: `Bearer ${bearerToken}` } // Use the token from the header
+            headers: { Authorization: `Bearer ${process.env.BEARER_TOKEN}` }
         });
-        res.json(response.data);
+        res.json(response.data); 
     } catch (error) {
          console.error('Error fetching video history from Fal REST API:');
         if (error.response) {
             console.error('Status:', error.response.status); console.error('Data:', error.response.data);
-            // Pass through Fal's error status and message if available
-            res.status(error.response.status).json({ error: `Failed to fetch video history from Fal API: ${error.response.data?.detail || error.response.statusText || 'Unknown Fal Error'}`, fal_error: error.response.data });
+            res.status(error.response.status).json({ error: 'Failed to fetch video history from Fal API', fal_error: error.response.data });
         } else if (error.request) {
             console.error('Request Error:', error.request);
             res.status(503).json({ error: 'No response from Fal API' });

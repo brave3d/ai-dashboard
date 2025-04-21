@@ -150,10 +150,13 @@
                         <label class="label">
                             <span class="label-text">Select Model Endpoint</span>
                         </label>
-                        <select id="modelSelect" name="model" class="select select-bordered w-full">
-                            <option value="">Select an endpoint</option>
-                            <!-- Options populated by loadModels() -->
-                        </select>
+                        <div class="flex flex-col gap-2">
+                            <input type="text" id="modelSearch" placeholder="Search models..." class="input input-bordered w-full">
+                            <select id="modelSelect" name="model" class="select select-bordered w-full">
+                                <option value="">Select an endpoint</option>
+                                <!-- Options populated by loadModels() -->
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Base Model Dropdown (Initially Hidden, shown for fal-ai/lora) -->
