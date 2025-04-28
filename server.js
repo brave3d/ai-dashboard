@@ -6,6 +6,8 @@ const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
 const fs = require('fs').promises;
+const { fileRouter } = require('./server-uploadthing'); // Import the UploadThing file router
+const { createRouteHandler } = require('uploadthing/express'); // Import the UploadThing route handler creator
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -38,7 +40,7 @@ app.get('/generate-stream', async (req, res) => {
     });
 
     // Destructure ALL potential parameters from the query string
-    const { prompt, imageSize, aspectRatio, numSteps, seed, guidanceScale, numImages, enableSafetyChecker, model, loraUrl, loraScale, outputFormat } = req.query;
+    const { prompt, imageSize, aspectRatio, numSteps, seed, guidanceScale, numImages, enableSafetyChecker, model, loraUrl, loraScale, outputFormat, image_url, strength } = req.query;
     
     try {
         const loras = loraUrl ? [{ path: loraUrl, scale: parseFloat(loraScale) || 1 }] : [];
@@ -80,7 +82,43 @@ app.get('/generate-stream', async (req, res) => {
                 has_nsfw_concepts: result.has_nsfw_concepts,
                 timings: result.timings, // Assuming result has timings
             };
+        } else if (model === 'fal-ai/flux/dev/image-to-image') {
+            console.log(`Handling Image-to-Image request with image_url: ${image_url && image_url.substring(0, 50)}...`);
             
+            if (!image_url) {
+                throw new Error('Missing required parameter: image_url is required for Image-to-Image generation');
+            }
+            
+            // Call fal.subscribe with the image-to-image specific parameters
+            result = await fal.subscribe(model, {
+                input: {
+                    prompt,
+                    image_url, // The URL of the uploaded image from UploadThing
+                    strength: parseFloat(strength) || 0.95, // Default to 0.95 if not provided
+                    num_inference_steps: parseInt(numSteps) || 40, // Default to 40 for image-to-image
+                    guidance_scale: parseFloat(guidanceScale) || 3.5,
+                    seed: seed && seed !== 'random' ? parseInt(seed) : undefined,
+                    num_images: parseInt(numImages) || 1,
+                    enable_safety_checker: enableSafetyChecker === 'true'
+                },
+                logs: true,
+                onQueueUpdate: (update) => {
+                    if (update.status === "IN_PROGRESS") {
+                        update.logs.forEach(log => {
+                            res.write(`data: ${JSON.stringify({ type: 'log', message: log.message })}\n\n`);
+                        });
+                    }
+                },
+            });
+            
+            // Structure output
+            output = {
+                images: result.images,
+                prompt: result.prompt,
+                seed: result.seed,
+                has_nsfw_concepts: result.has_nsfw_concepts,
+                timings: result.timings,
+            };
         } else {
             console.log(`Handling non-Flux Pro Ultra request (${model}) with imageSize: ${imageSize}`);
             
@@ -424,6 +462,59 @@ app.post('/api/delete-fal-video-request/:requestId', async (req, res) => {
     }
 });
 
+// Direct file upload endpoint as UploadThing fallback
+app.post('/api/direct-upload', upload.single('file'), async (req, res) => {
+    console.log("Received direct file upload (UploadThing fallback)");
+    
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded.' });
+    }
+    
+    if (!process.env.FAL_KEY) {
+        console.error("FAL_KEY environment variable not set!");
+        return res.status(500).json({ error: 'Server configuration error: Missing Fal API Key' });
+    }
+
+    try {
+        console.log(`Uploading file "${req.file.originalname}" (${req.file.size} bytes) to Fal storage...`);
+        
+        // Upload the file buffer from memory storage to Fal
+        const uploadedFileUrl = await fal.storage.upload(req.file.buffer, {
+            fileName: req.file.originalname,
+            contentType: req.file.mimetype,
+        });
+
+        console.log("File uploaded directly to Fal storage:", uploadedFileUrl);
+        res.json([{ url: uploadedFileUrl }]); // Match UploadThing response format
+    } catch (error) {
+        console.error("Error uploading file to Fal storage:", error);
+        res.status(500).json({ error: 'Failed to upload file to storage.' });
+    }
+});
+
+// UploadThing Integration: Create the route handler with the file router
+const uploadthingHandler = createRouteHandler({
+  router: fileRouter,
+  config: {
+    // Use the UPLOADTHING_TOKEN from environment variables
+    token: process.env.UPLOADTHING_TOKEN,
+  }
+});
+
+// Add UploadThing route to your Express app
+app.use("/api/uploadthing", async (req, res) => {
+  try {
+    // Pass the request to the uploadthing handler
+    const response = await uploadthingHandler(req);
+    // Return the response from UploadThing
+    return res.status(response.status || 200).send(response.body || {});
+  } catch (error) {
+    console.error("Error in UploadThing route:", error);
+    return res.status(500).send({ error: "Upload failed", message: error.message });
+  }
+});
+
 app.listen(3000, () => {
     console.log('Server is running on port 3000');
+    console.log('UploadThing router initialized at /api/uploadthing');
 });

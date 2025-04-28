@@ -210,8 +210,8 @@ MODELS = [
         "model_path": "fal-ai/flux-differential-diffusion"
     },
     {
-        "name": "FLUX.1 [dev]",
-        "thumbnail": "https://storage.googleapis.com/falserverless/gallery/yD32jWhfafC-vVBynYxey.png",
+        "name": "FLUX.1 [dev] Image to Image",
+        "thumbnail": "https://storage.googleapis.com/falserverless/gallery/yD32jWhfafC-vVBynYxey.png", // Re-using a relevant thumbnail
         "summary": "FLUX.1 Image-to-Image is a high-performance endpoint for the FLUX.1 [dev] model that enables rapid transformation of existing images, delivering high-quality style transfers and image modifications with the core FLUX capabilities.",
         "category": "image-to-image",
         "model_path": "fal-ai/flux/dev/image-to-image"
@@ -772,6 +772,212 @@ MODELS = [
   ]  
 
 let msnry = null; // Masonry instance variable - MOVED TO GLOBAL SCOPE
+let uploadthingClient = null; // Will hold the UploadThing client instance
+
+// Initialize UploadThing Client
+function initUploadThing() {
+    try {
+        console.log("Attempting to initialize UploadThing client");
+        
+        // Debug what's available
+        if (window.uploadthing) {
+            console.log("Found window.uploadthing, methods:", Object.keys(window.uploadthing));
+        } else if (window.UploadThing) {
+            console.log("Found window.UploadThing, methods:", Object.keys(window.UploadThing));
+        } else if (window.UT) {
+            console.log("Found window.UT, methods:", Object.keys(window.UT));
+        } else {
+            console.log("No UploadThing global object found. Available globals:", 
+                Object.keys(window).filter(k => k.toLowerCase().includes('upload')));
+        }
+        
+        // Try different possible API variations
+        if (window.uploadthing && typeof window.uploadthing.createUploadthing === 'function') {
+            uploadthingClient = window.uploadthing.createUploadthing({
+                url: '/api/uploadthing',
+            });
+        } else if (window.uploadthing && typeof window.uploadthing.createFileUploader === 'function') {
+            // Some versions directly expose createFileUploader
+            uploadthingClient = {
+                createFileUploader: (options) => window.uploadthing.createFileUploader({
+                    ...options,
+                    url: '/api/uploadthing'
+                })
+            };
+        } else if (window.UploadThing && typeof window.UploadThing.createUploader === 'function') {
+            // Try alternative global name
+            uploadthingClient = window.UploadThing.createUploader({
+                url: '/api/uploadthing'
+            });
+        } else {
+            // Fallback to direct fetch implementation if no library methods work
+            console.warn("Could not find UploadThing client methods. Using fallback implementation.");
+            uploadthingClient = createFallbackUploader();
+        }
+        
+        console.log("UploadThing client initialized successfully");
+        return true;
+    } catch (error) {
+        console.error("Error initializing UploadThing client:", error);
+        // Fall back to direct upload implementation
+        uploadthingClient = createFallbackUploader();
+        return uploadthingClient !== null;
+    }
+}
+
+// Create a fallback uploader that uses direct API endpoint
+function createFallbackUploader() {
+    console.warn("Using fallback direct upload implementation instead of UploadThing");
+    
+    return {
+        createFileUploader: ({ endpoint, onUploadProgress }) => {
+            return async (files) => {
+                // Only upload the first file for simplicity
+                const file = files[0];
+                if (!file) {
+                    throw new Error("No file provided");
+                }
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/direct-upload'); // Use our fallback endpoint
+                
+                // Set up progress handling
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable && onUploadProgress) {
+                        const progress = Math.round((event.loaded / event.total) * 100);
+                        onUploadProgress({ progress });
+                    }
+                };
+                
+                // Return a promise that resolves with the response
+                return new Promise((resolve, reject) => {
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const response = JSON.parse(xhr.responseText);
+                                console.log("Fallback upload successful:", response);
+                                resolve(response); // Should be in format [{ url: "..." }]
+                            } catch (e) {
+                                reject(new Error("Invalid JSON response from fallback upload server"));
+                            }
+                        } else {
+                            reject(new Error(`Fallback upload failed with status ${xhr.status}`));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error("Network error during fallback upload"));
+                    xhr.send(formData);
+                });
+            };
+        }
+    };
+}
+
+// Function to upload a file using UploadThing
+async function uploadFileToUploadThing(file) {
+    // Validate input
+    if (!file || !(file instanceof File)) {
+        throw new Error("Invalid file provided for upload");
+    }
+    
+    // Show upload progress UI
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    
+    if (uploadProgress) uploadProgress.classList.remove('hidden');
+    if (uploadStatus) uploadStatus.textContent = 'Preparing upload...';
+    if (uploadProgressBar) uploadProgressBar.value = 0;
+    
+    try {
+        // Check if client is initialized and initialize if needed
+        if (!uploadthingClient) {
+            console.warn("UploadThing client not initialized, trying to initialize...");
+            const initSuccess = initUploadThing();
+            if (!initSuccess || !uploadthingClient) {
+                throw new Error("Failed to initialize UploadThing client");
+            }
+        }
+        
+        console.log("Creating file uploader with endpoint 'imageUploader'");
+        // Try/catch specifically around the createFileUploader step for better error diagnosis
+        let endpoint;
+        try {
+            // Create the endpoint uploader 
+            endpoint = uploadthingClient.createFileUploader({
+                endpoint: "imageUploader", // Must match the server-side fileRouter endpoint
+                onUploadProgress: ({ progress }) => {
+                    console.log(`Upload progress: ${progress}%`);
+                    if (uploadProgressBar) uploadProgressBar.value = progress;
+                    if (uploadStatus) uploadStatus.textContent = `Uploading... ${progress}%`;
+                }
+            });
+            console.log("File uploader created successfully");
+        } catch (endpointError) {
+            console.error("Failed to create file uploader:", endpointError);
+            throw new Error(`Could not create uploader: ${endpointError.message}`);
+        }
+        
+        // Start the upload with the file
+        console.log("Starting file upload...");
+        const response = await endpoint([file]);
+        
+        console.log("Upload successful:", response);
+        
+        // Update UI to indicate success
+        if (uploadStatus) uploadStatus.textContent = 'Upload complete!';
+        if (uploadProgressBar) uploadProgressBar.value = 100;
+        
+        // Hide progress after a short delay
+        setTimeout(() => {
+            if (uploadProgress) uploadProgress.classList.add('hidden');
+        }, 1500);
+        
+        // Get the URL from the response
+        let fileUrl = null;
+        
+        if (response && Array.isArray(response) && response.length > 0 && response[0].url) {
+            fileUrl = response[0].url;
+        } else if (response && response.url) {
+            fileUrl = response.url;
+        } else if (response && typeof response === 'string' && response.startsWith('http')) {
+            fileUrl = response;
+        } else {
+            console.warn("Unexpected response format from uploadthing:", response);
+            throw new Error("Upload succeeded but response format was unexpected");
+        }
+        
+        console.log("Final uploaded file URL:", fileUrl);
+        
+        // Store the URL in our hidden input
+        const uploadedImageUrl = document.getElementById('uploadedImageUrl');
+        if (uploadedImageUrl && fileUrl) {
+            uploadedImageUrl.value = fileUrl;
+        }
+        
+        return fileUrl;
+    } catch (error) {
+        console.error("Error uploading file:", error);
+        
+        // Update UI to indicate error
+        if (uploadStatus) uploadStatus.textContent = `Upload failed: ${error.message || 'Unknown error'}`;
+        if (uploadProgress) {
+            // Add error styling
+            uploadProgress.classList.remove('hidden');
+            uploadProgressBar.classList.remove('progress-primary');
+            uploadProgressBar.classList.add('progress-error');
+        }
+        
+        // Hide progress after a longer delay
+        setTimeout(() => {
+            if (uploadProgress) uploadProgress.classList.add('hidden');
+        }, 3000);
+        
+        throw error;
+    }
+}
 
 // Function to display ALL results in the main preview pane
 function displayResultImages(imageArray) { // Renamed parameter
@@ -835,6 +1041,42 @@ function downloadImage(url, filename) {
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
+    // ===== Ensure UploadThing is loaded =====
+    if (!window.uploadthing && !window.UploadThing) {
+        console.log("UploadThing not detected, attempting to load it dynamically");
+        try {
+            // Try to load UploadThing dynamically if not already available
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/uploadthing@5.7.4/dist/uploadthing.js';
+                script.onload = () => {
+                    console.log("UploadThing script dynamically loaded");
+                    resolve();
+                };
+                script.onerror = () => {
+                    console.error("Failed to dynamically load UploadThing");
+                    reject(new Error("Failed to load UploadThing script"));
+                };
+                document.head.appendChild(script);
+            });
+            
+            // Initialize after loading
+            initUploadThing();
+        } catch (error) {
+            console.error("Error loading UploadThing:", error);
+        }
+    } else {
+        console.log("UploadThing already available, initializing...");
+        initUploadThing();
+    }
+    // ===== End UploadThing loading =====
+
+    // Initialize UploadThing client
+    initUploadThing();
+    
+    // Add clipboard paste functionality
+    setupClipboardPaste();
+    
     // Add near top with other state variables
     // let msnry = null; // Masonry instance variable - REMOVED FROM HERE
     const historyItemSelector = '.history-entry'; // Selector for grid items
@@ -888,6 +1130,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     const nextBtn = document.getElementById('nextBtn');
     let totalImages = 0;
     let imagesGenerated = 0;
+
+    // --- Add Selectors for new UI elements ---
+    const imageUploadContainer = document.getElementById('imageUploadContainer');
+    const imageUploadInput = document.getElementById('imageUploadInput');
+    const imagePreview = document.getElementById('imagePreview');
+    const strengthContainer = document.getElementById('strengthContainer');
+    const strengthSlider = document.getElementById('strengthSlider');
+    const strengthInput = document.getElementById('strengthInput');
+    const strengthValue = document.getElementById('strengthValue'); // Span to display value
+    // --- End Selectors ---
 
     const imageSizeContainer = document.getElementById('imageSizeContainer');
     const aspectRatioContainer = document.getElementById('aspectRatioContainer');
@@ -980,22 +1232,40 @@ document.addEventListener('DOMContentLoaded', async function() {
         const selectedModel = modelSelect.value;
         console.log(`updateDropdownVisibility called. Selected Model: "${selectedModel}"`); // Log function call and value
 
-        // Hide all conditional containers initially
-        imageSizeContainer.style.display = 'none';
-        aspectRatioContainer.style.display = 'none';
-        baseModelContainer.style.display = 'none'; // Hide base model dropdown initially
+        // Helper function to safely set display style
+        const setDisplay = (element, displayValue) => {
+            if (element) {
+                element.style.display = displayValue;
+            } else {
+                // Optionally log a warning if an element is missing, but don't crash
+                // console.warn(`Attempted to set display for a non-existent element.`);
+            }
+        };
 
+        // Hide all conditional containers initially using the safe helper
+        setDisplay(imageSizeContainer, 'none');
+        setDisplay(aspectRatioContainer, 'none');
+        setDisplay(baseModelContainer, 'none');
+        setDisplay(imageUploadContainer, 'none');
+        setDisplay(strengthContainer, 'none');
+
+        // Show containers based on model, using the safe helper
         if (selectedModel === 'fal-ai/flux-pro/v1.1-ultra') {
             console.log('Showing aspectRatioContainer');
-            aspectRatioContainer.style.display = 'block';
-        } else if (selectedModel === 'fal-ai/lora') { 
+            setDisplay(aspectRatioContainer, 'block');
+        } else if (selectedModel === 'fal-ai/lora') {
             console.log('Showing imageSizeContainer AND baseModelContainer for fal-ai/lora'); // Log specific path
-            imageSizeContainer.style.display = 'block';
-            baseModelContainer.style.display = 'block'; // Show base model dropdown for fal-ai/lora
+            setDisplay(imageSizeContainer, 'block');
+            setDisplay(baseModelContainer, 'block');
+        } else if (selectedModel === 'fal-ai/flux/dev/image-to-image') { // *** NEW MODEL CASE ***
+            console.log('Showing imageUploadContainer and strengthContainer for fal-ai/flux/dev/image-to-image');
+            setDisplay(imageUploadContainer, 'block');
+            setDisplay(strengthContainer, 'block');
+            // Optionally hide others if needed
+            // setDisplay(imageSizeContainer, 'none');
         } else if (selectedModel) { // For any other selected model (that's not empty)
             console.log('Showing imageSizeContainer for other model:', selectedModel);
-            imageSizeContainer.style.display = 'block';
-            // Base model container remains hidden
+            setDisplay(imageSizeContainer, 'block');
         } else {
              console.log('No model selected, hiding all conditional containers.');
         }
@@ -1017,10 +1287,51 @@ document.addEventListener('DOMContentLoaded', async function() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        
+
         // --- Build queryParams selectively ---
         let queryParams = new URLSearchParams();
         const selectedModelEndpoint = formData.get('model');
+        const promptValue = formData.get('prompt'); // Get prompt early for checks
+
+        // --- Image Upload Handling (Placeholder) ---
+        let imageUrlForApi = null; // Will hold the URL after upload
+        if (selectedModelEndpoint === 'fal-ai/flux/dev/image-to-image') {
+            const imageFile = imageUploadInput.files[0];
+            if (!imageFile) {
+                alert('Please select an input image for the Image-to-Image model.');
+                return; // Stop submission if image is required but missing
+            }
+            if (!promptValue) {
+                 alert('Please enter a prompt.');
+                 return; // Stop submission if prompt is missing
+            }
+
+            // --- UploadThing Integration --- 
+            // Now, get the URL from our hidden input field which has been populated
+            // when the file was uploaded via the input's change event
+            try {
+                const uploadedImageUrl = document.getElementById('uploadedImageUrl');
+                if (!uploadedImageUrl || !uploadedImageUrl.value) {
+                    throw new Error("No uploaded image URL found. Please upload an image first.");
+                }
+                
+                imageUrlForApi = uploadedImageUrl.value;
+                
+                console.log("Using previously uploaded image URL:", imageUrlForApi);
+                
+                if (!imageUrlForApi) {
+                    throw new Error("Could not retrieve the uploaded image URL.");
+                }
+                
+            } catch (uploadError) {
+                 console.error("Error retrieving uploaded image URL:", uploadError);
+                 alert(`Image URL retrieval failed: ${uploadError.message}`);
+                 return; // Stop if obtaining the URL fails
+            }
+            // --- End UploadThing Integration ---
+        }
+        // --- End Image Upload Handling ---
+
 
         // Set default/form values initially
         let numSteps = formData.get('numStepsInput') || formData.get('numStepsSlider');
@@ -1031,16 +1342,34 @@ document.addEventListener('DOMContentLoaded', async function() {
         const loraScale = formData.get('loraScale') || '1';
         let includeLoras = !!loraUrl; // Flag to check if LoRAs should be included
         const baseModelName = formData.get('baseModelName'); // Get selected base model name
+        const strength = formData.get('strengthInput') || formData.get('strengthSlider'); // Get strength value
 
         // Append common parameters first
         queryParams.append('model', selectedModelEndpoint);
-        queryParams.append('prompt', formData.get('prompt'));
+        queryParams.append('prompt', promptValue);
         queryParams.append('seed', formData.get('seed') || 'random');
         queryParams.append('numImages', formData.get('numImages') || '1');
         queryParams.append('enableSafetyChecker', formData.get('enableSafetyChecker') ? 'true' : 'false');
 
+
         // --- Model-Specific Parameter Adjustments ---
-        if (selectedModelEndpoint === 'fal-ai/flux-pro/v1.1-ultra') {
+        if (selectedModelEndpoint === 'fal-ai/flux/dev/image-to-image') {
+             if (!imageUrlForApi) { // Double check URL exists before appending
+                 alert("Internal error: Image URL not available after upload attempt.");
+                 return;
+             }
+             queryParams.append('image_url', imageUrlForApi);
+             queryParams.append('strength', strength);
+             // These might not be applicable or have different defaults for Img2Img
+             // queryParams.append('numSteps', numSteps);
+             // queryParams.append('guidanceScale', guidanceScale);
+             // Check Fal AI docs for specific parameters for this endpoint
+             // From docs: num_inference_steps (default 40), guidance_scale (default 3.5) are available
+             queryParams.append('num_inference_steps', numSteps); // Map our UI numSteps to this
+             queryParams.append('guidance_scale', guidanceScale); // Map our UI guidanceScale to this
+
+             includeLoras = false; // LoRAs might not be directly supported on this specific endpoint
+        } else if (selectedModelEndpoint === 'fal-ai/flux-pro/v1.1-ultra') {
             queryParams.append('aspectRatio', aspectRatio);
             includeLoras = false; 
         } else if (selectedModelEndpoint === 'fal-ai/fast-turbo-diffusion') {
@@ -1583,10 +1912,20 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     async function loadModels() {
         try {
-            const response = await fetch('models.json');
-            const models = await response.json();
+            // Remove potential fetching logic if present
+            // const response = await fetch('models.json'); 
+            // const models = await response.json();
+
+            // Explicitly use the global MODELS array
+            const models = MODELS; 
+            
             const select = document.getElementById('modelSelect');
-            select.innerHTML = '<option value="">Select an endpoint</option>'; 
+            if (!select) {
+                console.error("Fatal: modelSelect element not found in the DOM.");
+                return;
+            }
+
+            select.innerHTML = '<option value="">Select an endpoint</option>';
             models.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model.model_path;
@@ -1718,4 +2057,231 @@ document.addEventListener('DOMContentLoaded', async function() {
             elementToRemove.style.opacity = '1'; // Restore opacity on failure
         }
     }
+
+    if (strengthSlider && strengthInput && strengthValue) {
+        strengthSlider.addEventListener('input', function() {
+            strengthInput.value = this.value;
+            strengthValue.textContent = this.value;
+        });
+        strengthInput.addEventListener('change', function() { // Use 'change' for number input for better UX
+            let value = parseFloat(this.value);
+            if (value < 0.01) value = 0.01;
+            if (value > 1.0) value = 1.0;
+            this.value = value; // Update input if adjusted
+            strengthSlider.value = value;
+            strengthValue.textContent = value;
+        });
+         // Also handle direct input changes
+         strengthInput.addEventListener('input', function() {
+             let value = parseFloat(this.value);
+              // Don't clamp immediately on input, wait for change/blur
+              strengthValue.textContent = this.value; // Update label in real-time
+              // Optionally update slider in real-time too, but can be jerky
+              // if (!isNaN(value) && value >= 0.01 && value <= 1.0) {
+              //    strengthSlider.value = value;
+              // }
+         });
+
+    } else {
+        console.warn("Strength slider/input/value elements not found.");
+    }
+
+    // --- Image Preview Logic ---
+    if (imageUploadInput && imagePreview) {
+        imageUploadInput.addEventListener('change', async function(event) {
+            const file = event.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                // Show preview of the image
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden'); // Show preview
+                }
+                reader.readAsDataURL(file);
+                
+                // Automatically upload the file to UploadThing
+                try {
+                    const uploadedUrl = await uploadFileToUploadThing(file);
+                    console.log("File uploaded successfully, URL:", uploadedUrl);
+                    
+                    // Store the URL for later use during form submission
+                    const uploadedImageUrl = document.getElementById('uploadedImageUrl');
+                    if (uploadedImageUrl) {
+                        uploadedImageUrl.value = uploadedUrl;
+                    }
+                } catch (error) {
+                    console.error("Error during automatic upload:", error);
+                    alert(`Failed to upload image: ${error.message}`);
+                }
+            } else {
+                imagePreview.src = '#'; // Clear preview
+                imagePreview.classList.add('hidden'); // Hide preview
+                // Clear the hidden input
+                const uploadedImageUrl = document.getElementById('uploadedImageUrl');
+                if (uploadedImageUrl) {
+                    uploadedImageUrl.value = '';
+                }
+                
+                if (file) { // If a file was selected but wasn't an image
+                    alert("Please select a valid image file.");
+                    imageUploadInput.value = ''; // Clear the input
+                }
+            }
+        });
+    } else {
+        console.warn("Image upload input or preview element not found.");
+    }
+    // --- End Image Preview ---
+
+    // Helper function to read file as Data URL
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    loadModels(); // Load models when DOM is ready
 });
+
+// Function to handle clipboard paste
+function setupClipboardPaste() {
+    console.log('Setting up clipboard paste functionality');
+    
+    // Add event listeners for paste events
+    document.addEventListener('paste', handlePaste);
+    
+    // Make pasteTarget elements clickable and give focus for paste
+    const pasteTarget = document.getElementById('pasteTarget');
+    if (pasteTarget) {
+        pasteTarget.addEventListener('click', () => {
+            pasteTarget.classList.add('pulse'); // Add pulse animation when clicked
+            
+            // Show a tooltip or message
+            const pasteIndicator = pasteTarget.querySelector('span');
+            if (pasteIndicator) {
+                pasteIndicator.textContent = 'Press Ctrl+V to paste image';
+            }
+            
+            // Set focus to enable paste events
+            pasteTarget.focus();
+            
+            // Remove pulse class after animation completes
+            setTimeout(() => {
+                pasteTarget.classList.remove('pulse');
+                
+                // Reset tooltip
+                if (pasteIndicator) {
+                    pasteIndicator.textContent = 'Drop image here or click to paste from clipboard';
+                }
+            }, 1500);
+        });
+    }
+    
+    // Also make the container itself paste-enabled
+    const imageUploadContainer = document.getElementById('imageUploadContainer');
+    if (imageUploadContainer) {
+        imageUploadContainer.classList.add('paste-enabled');
+        imageUploadContainer.tabIndex = 0; // Make focusable
+    }
+}
+
+function handlePaste(event) {
+    console.log('Paste event detected');
+    
+    // Check if we're focused in a text input
+    const activeElement = document.activeElement;
+    const isTextInput = activeElement.tagName === 'INPUT' || 
+                       activeElement.tagName === 'TEXTAREA' ||
+                       activeElement.isContentEditable;
+    
+    // If we're in a text input and it's not the paste target, let the default paste happen
+    if (isTextInput && activeElement.id !== 'pasteTarget') {
+        console.log('Paste event in text input, ignoring for image paste');
+        return;
+    }
+    
+    // Look for image data in clipboard
+    const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+    
+    for (const item of items) {
+        if (item.type.indexOf('image') === 0) {
+            console.log('Image found in clipboard');
+            
+            // Prevent default paste
+            event.preventDefault();
+            
+            // Get the blob/file from clipboard
+            const blob = item.getAsFile();
+            
+            // Process the file
+            processImageFile(blob);
+            return;
+        }
+    }
+    
+    console.log('No image found in clipboard');
+}
+
+function processImageFile(file) {
+    if (!file) {
+        console.error('No file provided to processImageFile');
+        return;
+    }
+    
+    console.log('Processing pasted image file:', file.name || 'unnamed', file.type, file.size);
+    
+    // Show success indicator
+    const pasteTarget = document.getElementById('pasteTarget');
+    if (pasteTarget) {
+        pasteTarget.innerHTML = '<div class="paste-success">Image received! Processing...</div>';
+    }
+    
+    // Create a preview of the image
+    const imagePreview = document.getElementById('imagePreview');
+    if (imagePreview) {
+        // Read the file as data URL
+        readFileAsDataURL(file).then(dataUrl => {
+            // Display the image
+            imagePreview.src = dataUrl;
+            imagePreview.classList.remove('hidden');
+            
+            // Upload the file
+            uploadFileToUploadThing(file).then(fileUrl => {
+                console.log('Upload complete, file URL:', fileUrl);
+                
+                // Update paste target with success message
+                if (pasteTarget) {
+                    pasteTarget.innerHTML = '<div class="paste-success">Image uploaded successfully!</div>';
+                }
+                
+                // Add a short delay then reset the paste target
+                setTimeout(() => {
+                    if (pasteTarget) {
+                        pasteTarget.innerHTML = '<span class="text-sm">Drop image here or click to paste from clipboard</span>';
+                    }
+                }, 3000);
+            }).catch(error => {
+                console.error('Error uploading pasted image:', error);
+                
+                // Show error in paste target
+                if (pasteTarget) {
+                    pasteTarget.innerHTML = `<div class="paste-error">Upload failed: ${error.message}</div>`;
+                }
+            });
+        }).catch(error => {
+            console.error('Error reading pasted image file:', error);
+        });
+    }
+}
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+    });
+}

@@ -14,6 +14,23 @@
     <!-- Add Masonry & imagesLoaded -->
     <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" defer></script>
     <script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js" defer></script>
+    <!-- Add UploadThing Client -->
+    <script 
+      src="https://unpkg.com/uploadthing@5.7.4/dist/uploadthing.js" 
+      onload="console.log('UploadThing script loaded successfully');"
+      onerror="console.error('Failed to load UploadThing script');">
+    </script>
+    <script>
+      // Add this to debug what's available
+      window.addEventListener('DOMContentLoaded', function() {
+        console.log('UploadThing global object:', window.uploadthing);
+        if (window.uploadthing) {
+          console.log('Available methods:', Object.keys(window.uploadthing));
+        } else {
+          console.log('Available global objects:', Object.keys(window).filter(k => k.toLowerCase().includes('upload')));
+        }
+      });
+    </script>
     <!-- End Add Libraries -->
     <style>
       /* Custom styles */
@@ -133,6 +150,63 @@
       }
       /* --- End Style --- */
 
+      /* --- Image Preview Styling --- */
+      #imagePreview {
+        max-height: 200px;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        margin-top: 10px;
+        margin-bottom: 10px;
+      }
+      #imageUploadContainer {
+        margin-bottom: 20px;
+      }
+      /* --- End Image Preview Styling --- */
+      
+      /* --- Clipboard Paste Styling --- */
+      .paste-enabled {
+        outline: 2px dashed transparent;
+        transition: all 0.2s ease;
+      }
+      .paste-enabled:focus {
+        outline: 2px dashed var(--primary);
+        outline-offset: 4px;
+      }
+      .paste-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        font-size: 14px;
+        color: var(--primary-content);
+        background-color: var(--primary);
+        border-radius: 4px;
+        margin-top: 8px;
+        opacity: 0.8;
+        transition: all 0.2s ease;
+      }
+      .paste-indicator.pulse {
+        animation: pulse-animation 1s ease;
+      }
+      .paste-success {
+        background-color: #4CAF50;
+        color: white;
+        padding: 8px;
+        border-radius: 4px;
+        text-align: center;
+        margin-top: 8px;
+      }
+      @keyframes pulse-animation {
+        0% { transform: scale(1); opacity: 0.8; }
+        50% { transform: scale(1.05); opacity: 1; }
+        100% { transform: scale(1); opacity: 0.8; }
+      }
+      /* --- End Clipboard Paste Styling --- */
+
     </style>
 </head>
 <body class="bg-base-200">
@@ -150,13 +224,10 @@
                         <label class="label">
                             <span class="label-text">Select Model Endpoint</span>
                         </label>
-                        <div class="flex flex-col gap-2">
-                            <input type="text" id="modelSearch" placeholder="Search models..." class="input input-bordered w-full">
-                            <select id="modelSelect" name="model" class="select select-bordered w-full">
-                                <option value="">Select an endpoint</option>
-                                <!-- Options populated by loadModels() -->
-                            </select>
-                        </div>
+                        <select id="modelSelect" name="model" class="select select-bordered w-full">
+                            <option value="">Select an endpoint</option>
+                            <!-- Options populated by loadModels() -->
+                        </select>
                     </div>
 
                     <!-- Base Model Dropdown (Initially Hidden, shown for fal-ai/lora) -->
@@ -177,6 +248,62 @@
                             <span class="label-text">Prompt*</span>
                         </label>
                         <textarea id="prompt" name="prompt" rows="4" required class="textarea textarea-bordered w-full"></textarea>
+                    </div>
+
+                    <!-- Input Image Element -->
+                    <div id="imageUploadContainer" class="mb-4" style="display: none;">
+                        <label for="imageUploadInput" class="block text-sm font-medium mb-1">Input Image (for Image-to-Image):</label>
+                        <div class="flex flex-col space-y-2 bg-base-200 p-3 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <input type="file" id="imageUploadInput" name="imageUploadInput" class="file-input file-input-bordered file-input-primary w-full max-w-xs" accept="image/*">
+                                <div class="text-sm opacity-70 flex items-center" title="You can also paste image from clipboard">
+                                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                  </svg>
+                                  Paste (Ctrl+V)
+                                </div>
+                            </div>
+                            <div id="pasteTarget" class="border-2 border-dashed border-base-300 rounded-lg p-4 text-center cursor-pointer hover:bg-base-300/30 transition-colors">
+                                <span class="text-sm">Drop image here or click to paste from clipboard</span>
+                            </div>
+                            <div id="uploadProgress" class="hidden mt-2">
+                                <div class="flex items-center">
+                                    <div class="loading loading-spinner loading-xs mr-2"></div>
+                                    <span id="uploadStatus" class="text-sm">Uploading...</span>
+                                </div>
+                                <progress id="uploadProgressBar" class="progress progress-primary w-full mt-1" value="0" max="100"></progress>
+                            </div>
+                            <div class="image-preview-container flex justify-start">
+                                <img id="imagePreview" src="#" alt="Image Preview" class="hidden rounded border"/>
+                            </div>
+                            <input type="hidden" id="uploadedImageUrl" name="uploadedImageUrl" value="">
+                        </div>
+                    </div>
+
+                    <!-- Strength Slider Element -->
+                    <div id="strengthContainer" class="mb-4" style="display: none;">
+                        <label for="strengthSlider" class="block text-sm font-medium mb-1">
+                            Transformation Strength
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg">
+                            <div class="flex items-center mb-2">
+                                <span class="text-sm mr-2">Subtler</span>
+                                <div class="flex-grow">
+                                    <input type="range" id="strengthSlider" name="strengthSlider" min="0.01" max="1.0" step="0.01" value="0.95" class="range range-sm range-primary">
+                                </div>
+                                <span class="text-sm ml-2">Stronger</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center">
+                                    <span class="font-medium text-sm mr-2">Strength:</span>
+                                    <span id="strengthValue" class="badge badge-primary">0.95</span>
+                                </div>
+                                <input type="number" id="strengthInput" name="strengthInput" min="0.01" max="1.0" step="0.01" value="0.95" class="input input-bordered input-sm input-primary w-20">
+                            </div>
+                            <div class="text-xs mt-2 text-base-content/70">
+                                Higher values produce more dramatic changes to the original image.
+                            </div>
+                        </div>
                     </div>
 
                     <div class="additional-settings">
